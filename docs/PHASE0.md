@@ -17,7 +17,60 @@ Nothing here writes to the GPU except the optional `trace` step, which is an ord
 
 Write down every value; they go into the report.
 
-## Linux live USB
+## Without Linux: native Windows + macOS (the default path)
+
+WSL2 can't be used for the hardware reads: it is a Hyper-V VM and sees the GPU only as Microsoft's
+paravirtual `/dev/dxg`, with no PCI device, no MMIO and no amdgpu. WSL is fine for the offline work: `make test`,
+`tools/parse_discovery.py`, `edid-decode`.
+
+### Windows (PowerShell as Administrator; nothing here touches the GPU)
+
+PCI ID, revision, subsystem:
+
+```powershell
+Get-PnpDevice -Class Display | Format-List FriendlyName,InstanceId
+```
+
+```powershell
+Get-CimInstance Win32_VideoController | Format-List Name,PNPDeviceID,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate
+```
+
+Every monitor EDID Windows has seen, saved as `.bin` in the current folder:
+
+```powershell
+Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\DISPLAY' -Recurse -ErrorAction SilentlyContinue | Where-Object PSChildName -eq 'Device Parameters' | ForEach-Object { $e = (Get-ItemProperty $_.PSPath).EDID; if ($e) { $n = (($_.PSPath -split '\\')[-3..-2] -join '_') -replace '[^\w]', '_'; [IO.File]::WriteAllBytes("$PWD\edid_$n.bin", $e) } }
+```
+
+The VBIOS (connector table) from ACPI VFCT, with ACPICA's `acpidump.exe` (Intel "ACPI Component Architecture"
+Windows binaries):
+
+```powershell
+.\acpidump.exe -n VFCT -b
+```
+
+GPU-Z: a screenshot of the Graphics Card tab (device ID, revision, subvendor, shaders, BIOS version, Resizable
+BAR). If its BIOS save arrow works on the APU, also the saved `.rom`.
+
+Then decode in WSL:
+
+```bash
+sudo apt install -y edid-decode && edid-decode edid_*.bin
+```
+
+### macOS on the 8500G (with the GOP/firmware framebuffer, before any bring-up)
+
+Gets what only the hardware can tell: the IP discovery table (PhxProbe.kext), which PSP/SMU segment answers,
+the GOP display pipe and the UMA layout (PhxBringup.kext `ReadRegs` via `phxctl regs`, root plus `phxdebug=1`).
+Both kexts match only 1002:1900 upstream, so this needs a small reviewed diff first (adding the Phoenix 2 ID to
+their `Info.plist`). **Do not run `install.sh` or `phxboot`**: they would run the Phoenix 1 bring-up on this chip.
+
+OpenCore can also dump all ACPI tables (VFCT included) to the EFI partition: DEBUG build, `Misc → Debug →
+SysReport = true`.
+
+Without Linux there are no amdgpu MMIO traces, so the GART/MES/PSP values come from the Linux source (cited per
+line) instead of a copied trace.
+
+## Linux live USB (optional, only if one becomes possible)
 
 Ubuntu 25.10 or newer (kernel 6.17+) or a current Arch ISO. Connect the 180 Hz monitor to the board output
 you'll use with macOS. If you want to compare, run step 1 once per port (HDMI, then DP).

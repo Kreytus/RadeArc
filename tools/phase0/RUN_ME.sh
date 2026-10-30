@@ -9,11 +9,30 @@
 set -u
 [ "$(id -u)" = 0 ] || exec sudo bash "$0" "$@"
 HERE=$(cd "$(dirname "$0")" && pwd)
-WORK=/root/phase0-out; rm -rf "$WORK"
+# Loading amdgpu restarts the desktop session (logout), which kills a script running in its Terminal: run detached
+# from the session, log to a file and only follow the log here.
+LOG=/root/phase0-run.log
+if [ -z "${PHASE0_DETACHED:-}" ]; then
+    PHASE0_DETACHED=1 setsid nohup bash "$0" "$@" > "$LOG" 2>&1 < /dev/null &
+    echo "Running in the background; it keeps going even if you get logged out."
+    echo "If that happens: log back in (user ubuntu, no password), open Terminal and run   sudo tail -f $LOG"
+    echo
+    sleep 1; exec tail --pid=$! -n +1 -f "$LOG"
+fi
+WORK=/root/phase0-out
 BDF=$(lspci -D -d 1002: -n | awk '$2 ~ /^03(00|80):/ {print $1; exit}')
 [ -n "$BDF" ] || { echo "no AMD GPU found: is Integrated Graphics set to Forces in the BIOS?"; exit 1; }
 
-if [ -e "/sys/bus/pci/devices/$BDF/driver" ]; then
+if [ -e "/sys/bus/pci/devices/$BDF/driver" ] && [ -s "$WORK/gop/gop_regs.txt" ]; then
+    # an earlier run in this boot got as far as loading amdgpu (e.g. the session ended under it): finish that one
+    echo "== finishing the earlier run of this boot"
+    T=/sys/kernel/tracing
+    if [ ! -s "$WORK/trace-dc1/regtrace.txt.xz" ] && [ -e $T/trace ]; then
+        echo 0 > $T/tracing_on; mkdir -p "$WORK/trace-dc1"
+        xz -T0 < $T/trace > "$WORK/trace-dc1/regtrace.txt.xz"; dmesg > "$WORK/trace-dc1/dmesg.txt"
+    fi
+    FINISH=1
+elif [ -e "/sys/bus/pci/devices/$BDF/driver" ]; then
     cat <<'EOF'
 amdgpu is already loaded, so the firmware display state is gone in this boot. Reboot and:
   1. F12 -> the "UEFI: <stick>" entry. In the GRUB menu (tap Esc if it does not show) highlight
@@ -33,14 +52,17 @@ if ! command -v vulkaninfo >/dev/null || ! command -v edid-decode >/dev/null; th
         echo "   (no network: skipped, not a problem)"
 fi
 
-echo "== 1/3 reading the firmware (GOP) display pipe"
-bash "$HERE/phase0.sh" gop "$WORK" > /dev/null
-grep -E 'OTG[0-3]_OTG_CONTROL|seg[01] C2PMSG_(81|90)|^pci' "$WORK/gop/gop_regs.txt"
-
-echo
-echo "== 2/3 loading amdgpu and recording it (about 40 s; the screen may flicker or go black briefly: wait)"
-sleep 3
-bash "$HERE/phase0.sh" trace "$WORK" 1
+if [ -z "${FINISH:-}" ]; then
+    rm -rf "$WORK"
+    echo "== 1/3 reading the firmware (GOP) display pipe"
+    bash "$HERE/phase0.sh" gop "$WORK" > /dev/null
+    grep -E 'OTG[0-3]_OTG_CONTROL|seg[01] C2PMSG_(81|90)|^pci' "$WORK/gop/gop_regs.txt"
+    echo
+    echo "== 2/3 loading amdgpu and recording it (about 40 s). The screen may go black and you may get logged out:"
+    echo "   that is expected and the script keeps running. Log back in and run   sudo tail -f $LOG"
+    sleep 3
+    bash "$HERE/phase0.sh" trace "$WORK" 1
+fi
 
 echo "== 3/3 collecting what amdgpu reports"
 bash "$HERE/phase0.sh" driver "$WORK" > /dev/null

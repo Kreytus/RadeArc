@@ -17,45 +17,16 @@ Nothing here writes to the GPU except the optional `trace` step, which is an ord
 
 Write down every value; they go into the report.
 
-## Without Linux: native Windows + macOS (the default path)
+## Without Linux: OpenCore and macOS on the 8500G (the default path)
 
-WSL2 can't be used for the hardware reads: it is a Hyper-V VM and sees the GPU only as Microsoft's
-paravirtual `/dev/dxg`, with no PCI device, no MMIO and no amdgpu. WSL is fine for the offline work: `make test`,
-`tools/parse_discovery.py`, `edid-decode`.
+Only the 8500G itself can answer these questions; another PC (or WSL on it) can't. WSL on another machine is
+still fine for the offline work: `make test`, `tools/parse_discovery.py`, `edid-decode` on files copied over.
 
-### Windows (PowerShell as Administrator; nothing here touches the GPU)
+### OpenCore, no OS needed
 
-PCI ID, revision, subsystem:
-
-```powershell
-Get-PnpDevice -Class Display | Format-List FriendlyName,InstanceId
-```
-
-```powershell
-Get-CimInstance Win32_VideoController | Format-List Name,PNPDeviceID,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate
-```
-
-Every monitor EDID Windows has seen, saved as `.bin` in the current folder:
-
-```powershell
-Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\DISPLAY' -Recurse -ErrorAction SilentlyContinue | Where-Object PSChildName -eq 'Device Parameters' | ForEach-Object { $e = (Get-ItemProperty $_.PSPath).EDID; if ($e) { $n = (($_.PSPath -split '\\')[-3..-2] -join '_') -replace '[^\w]', '_'; [IO.File]::WriteAllBytes("$PWD\edid_$n.bin", $e) } }
-```
-
-The VBIOS (connector table) from ACPI VFCT, with ACPICA's `acpidump.exe` (Intel "ACPI Component Architecture"
-Windows binaries):
-
-```powershell
-.\acpidump.exe -n VFCT -b
-```
-
-GPU-Z: a screenshot of the Graphics Card tab (device ID, revision, subvendor, shaders, BIOS version, Resizable
-BAR). If its BIOS save arrow works on the APU, also the saved `.rom`.
-
-Then decode in WSL:
-
-```bash
-sudo apt install -y edid-decode && edid-decode edid_*.bin
-```
+DEBUG build of OpenCore with `Misc → Debug → SysReport = true`: one boot writes `SysReport/` to the EFI
+partition. It holds the ACPI tables (VFCT = the iGPU VBIOS with the connector table) and the PCI device list
+(1002:xxxx, revision, subsystem). Set `SysReport` back to false afterwards.
 
 ### macOS on the 8500G (with the GOP/firmware framebuffer, before any bring-up)
 

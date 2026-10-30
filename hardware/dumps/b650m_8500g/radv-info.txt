@@ -1,0 +1,261 @@
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+Device info:
+    name = PHOENIX2
+    marketing_name = AMD Radeon Graphics
+    dev_filename = /dev/dri/renderD128
+    num_se = 1
+    num_rb = 1
+    num_cu = 4
+    max_gpu_freq = 2799 MHz
+    max_gflops = 2866 GFLOPS
+    sqc_inst_cache_size = 32 KB (1 per WGP)
+    sqc_scalar_cache_size = 16 KB (1 per WGP)
+    tcp_cache_size = 32 KB
+    l1_cache_size = 256 KB
+    l2_cache_size = 1024 KB
+    memory_channels = 4 (TCC blocks)
+    memory_size = 2 GB (2048 MB)
+    memory_freq = 11 GHz
+    memory_bus_width = 64 bits
+    memory_bandwidth = 84 GB/s
+    pcie_gen = 4
+    pcie_num_lanes = 16
+    pcie_bandwidth = 31.5 GB/s
+    clock_crystal_freq = 100000 KHz
+    IP GFX     11.0 	queues:1 	align:256 	pad_dw:0x7
+    IP COMPUTE 11.0 	queues:4 	align:256 	pad_dw:0x7
+    IP SDMA     6.0 	queues:1 	align:256 	pad_dw:0xf
+    IP VCN      4.0 	queues:1 	align:256 	pad_dw:0x3f
+    IP VCN_JPEG  4.0 	queues:1 	align:256 	pad_dw:0xf
+Identification:
+    pci (domain:bus:dev.func): 0000:0f:00.0
+    pci_id = 0x15c8
+    pci_rev_id = 0xc5
+    family = 91
+    gfx_level = 14
+    family_id = 148
+    chip_external_rev = 130
+    chip_rev = 2
+Flags:
+    family_overridden = 0
+    is_pro_graphics = 0
+    has_graphics = 1
+    has_clear_state = 0
+    has_distributed_tess = 1
+    has_dcc_constant_encode = 1
+    has_rbplus = 1
+    rbplus_allowed = 1
+    has_load_ctx_reg_pkt = 1
+    has_out_of_order_rast = 0
+    cpdma_prefetch_writes_memory = 0
+    has_gfx9_scissor_bug = 0
+    has_tc_compat_zrange_bug = 0
+    has_small_prim_filter_sample_loc_bug = 0
+    has_ls_vgpr_init_bug = 0
+    has_pops_missed_overlap_bug = 0
+    has_32bit_predication = 1
+    has_3d_cube_border_color_mipmap = 1
+    has_image_opcodes = 1
+    never_stop_sq_perf_counters = 0
+    has_sqtt_rb_harvest_bug = 0
+    has_sqtt_auto_flush_mode_bug = 0
+    never_send_perfcounter_stop = 1
+    discardable_allows_big_page = 0
+    has_taskmesh_indirect0_bug = 0
+    has_set_context_pairs = 0
+    has_set_context_pairs_packed = 0
+    has_set_sh_pairs = 0
+    has_set_sh_pairs_packed = 0
+    has_set_uconfig_pairs = 0
+    conformant_trunc_coord = 1
+    mesh_fast_launch_2 = 1
+Display features:
+    use_display_dcc_unaligned = 0
+    use_display_dcc_with_retile_blit = 1
+Memory info:
+    pte_fragment_size = 2097152
+    gart_page_size = 4096
+    gart_size = 6792 MB
+    vram_size = 2048 MB
+    vram_vis_size = 2048 MB
+    vram_type = 10
+    max_heap_size_kb = 6792 MB
+    min_alloc_size = 0
+    address32_hi = 0xffff8000
+    has_dedicated_vram = 0
+    all_vram_visible = 1
+    max_tcc_blocks = 4
+    tcc_cache_line_size = 128
+    tcc_rb_non_coherent = 0
+    cp_sdma_ge_use_system_memory_scope = 0
+    pc_lines = 1024
+    lds_size_per_workgroup = 131072
+    lds_alloc_granularity = 1024
+    lds_encode_granularity = 512
+    max_memory_clock = 2600 MHz
+CP info:
+    gfx_ib_pad_with_type2 = 0
+    has_cp_dma = 1
+    me_fw_version = 7
+    me_fw_feature = 35
+    mec_fw_version = 15
+    mec_fw_feature = 35
+    pfp_fw_version = 14
+    pfp_fw_feature = 35
+Multimedia info:
+    vcn_unified = 1
+    vcn_enc_major_version = 1
+    vcn_enc_minor_version = 24
+    vcn_dec_version = 9
+    jpeg_decode = 1
+    codec    dec  max_resolution   enc  max_resolution  
+    mpeg2    -    -                -    -               
+    mpeg4    -    -                -    -               
+    vc1      -    -                -    -               
+    h264     *    4096x4096        *    4096x4096       
+    hevc     *    8192x4352        *    8192x4352       
+    jpeg     *    16384x16384      -    -               
+    vp9      *    8192x4352        -    -               
+    av1      *    8192x4352        *    8192x4352       
+Kernel & winsys capabilities:
+    drm = 3.64.0
+    has_userptr = 1
+    has_timeline_syncobj = 1
+    has_vm_always_valid = 1
+    has_bo_metadata = 1
+    has_eqaa_surface_allocator = 0
+    has_sparse_vm_mappings = 1
+    has_stable_pstate = 1
+    has_gang_submit = 1
+    has_gpuvm_fault_query = 1
+    has_kernelq_reg_shadowing = 0
+    has_fw_based_shadowing = 0
+    has_default_zerovram_support = 1
+    has_tmz_support = 0
+    has_trap_handler_support = 0
+    IP GFX     max_submitted_ibs = 192
+    IP COMPUTE max_submitted_ibs = 125
+    IP SDMA    max_submitted_ibs = 49
+    IP UVD     max_submitted_ibs = 1
+    IP VCE     max_submitted_ibs = 1
+    IP UVD_ENC max_submitted_ibs = 1
+    IP VCN_DEC max_submitted_ibs = 1
+    IP VCN     max_submitted_ibs = 1
+    IP VCN_JPEG max_submitted_ibs = 16
+    IP VPE     max_submitted_ibs = 49
+    kernel_has_modifiers = 1
+    uses_kernel_cu_mask = 0
+Shader core info:
+    cu_mask[SE0][SA0] = 0xf 	(4)	CU_EN = 0xf
+    spi_cu_en_has_effect = 0
+    max_good_cu_per_sa = 4
+    min_good_cu_per_sa = 4
+    max_se = 1
+    max_sa_per_se = 1
+    num_cu_per_sh = 4
+    max_waves_per_simd = 16
+    num_physical_sgprs_per_simd = 2048
+    num_physical_wave64_vgprs_per_simd = 512
+    num_simd_per_compute_unit = 2
+    min_sgpr_alloc = 128
+    max_sgpr_alloc = 104
+    sgpr_alloc_granularity = 128
+    min_wave64_vgpr_alloc = 4
+    max_vgpr_alloc = 256
+    wave64_vgpr_alloc_granularity = 4
+    max_scratch_waves = 128
+    has_scratch_base_registers = 1
+Ring info:
+    attribute_ring_size_per_se = 512 KB
+    total_attribute_pos_prim_ring_size = 512 KB
+    hs_offchip_workgroup_size = 32768 B
+    tess_factor_ring_size = 12 KB
+    tess_offchip_ring_size = 512 KB
+Render backend info:
+    pa_sc_tile_steering_override = 0x0
+    max_render_backends = 1
+    num_tile_pipes = 4
+    pipe_interleave_bytes = 256
+    enabled_rb_mask = 0x1
+    max_alignment = 262144
+    pbb_max_alloc_count = 16
+GB_ADDR_CONFIG: 0x00000142
+    num_pipes = 4
+    pipe_interleave_size = 256
+    max_compressed_frags = 2
+    num_pkrs = 2
+Modifiers (32bpp):
+    GFX11,64KB_R_X,PIPE_XOR_BITS=2,PACKERS=1,DCC,DCC_MAX_COMPRESSED_BLOCK=128B,DCC_INDEPENDENT_128B,DCC_PIPE_ALIGN
+    GFX11,64KB_R_X,PIPE_XOR_BITS=2,PACKERS=1,DCC,DCC_MAX_COMPRESSED_BLOCK=128B,DCC_INDEPENDENT_128B,DCC_RETILE
+    GFX11,64KB_R_X,PIPE_XOR_BITS=2,PACKERS=1,DCC,DCC_MAX_COMPRESSED_BLOCK=64B,DCC_INDEPENDENT_64B,DCC_INDEPENDENT_128B,DCC_RETILE
+    GFX11,64KB_R_X,PIPE_XOR_BITS=2,PACKERS=1
+    GFX11,64KB_D
+    LINEAR
+==========
+VULKANINFO
+==========
+
+Vulkan Instance Version: 1.4.321
+
+
+Instance Extensions: count = 24
+-------------------------------
+VK_EXT_acquire_drm_display             : extension revision 1
+VK_EXT_acquire_xlib_display            : extension revision 1
+VK_EXT_debug_report                    : extension revision 10
+VK_EXT_debug_utils                     : extension revision 2
+VK_EXT_direct_mode_display             : extension revision 1
+VK_EXT_display_surface_counter         : extension revision 1
+VK_EXT_headless_surface                : extension revision 1
+VK_EXT_surface_maintenance1            : extension revision 1
+VK_EXT_swapchain_colorspace            : extension revision 5
+VK_KHR_device_group_creation           : extension revision 1
+VK_KHR_display                         : extension revision 23
+VK_KHR_external_fence_capabilities     : extension revision 1
+VK_KHR_external_memory_capabilities    : extension revision 1
+VK_KHR_external_semaphore_capabilities : extension revision 1
+VK_KHR_get_display_properties2         : extension revision 1
+VK_KHR_get_physical_device_properties2 : extension revision 2
+VK_KHR_get_surface_capabilities2       : extension revision 1
+VK_KHR_portability_enumeration         : extension revision 1
+VK_KHR_surface                         : extension revision 25
+VK_KHR_surface_protected_capabilities  : extension revision 1
+VK_KHR_wayland_surface                 : extension revision 6
+VK_KHR_xcb_surface                     : extension revision 6
+VK_KHR_xlib_surface                    : extension revision 6
+VK_LUNARG_direct_driver_loading        : extension revision 1
+
+Instance Layers: count = 3
+--------------------------
+VK_LAYER_INTEL_nullhw       INTEL NULL HW                1.1.73   version 1
+VK_LAYER_MESA_device_select Linux device selection layer 1.4.303  version 1
+VK_LAYER_MESA_overlay       Mesa Overlay layer           1.4.303  version 1
+
+Devices:
+========
+GPU0:
+	apiVersion         = 1.4.318
+	driverVersion      = 25.2.8
+	vendorID           = 0x1002
+	deviceID           = 0x15c8
+	deviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+	deviceName         = AMD Radeon Graphics (RADV PHOENIX2)
+	driverID           = DRIVER_ID_MESA_RADV
+	driverName         = radv
+	driverInfo         = Mesa 25.2.8-0ubuntu0.25.10.2
+	conformanceVersion = 1.4.0.0
+	deviceUUID         = 00000000-0f00-0000-0000-000000000000
+	driverUUID         = 414d442d-4d45-5341-2d44-525600000000
+GPU1:
+	apiVersion         = 1.4.318
+	driverVersion      = 25.2.8
+	vendorID           = 0x10005
+	deviceID           = 0x0000
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 20.1.8, 256 bits)
+	driverID           = DRIVER_ID_MESA_LLVMPIPE
+	driverName         = llvmpipe
+	driverInfo         = Mesa 25.2.8-0ubuntu0.25.10.2 (LLVM 20.1.8)
+	conformanceVersion = 1.3.1.1
+	deviceUUID         = 6d657361-3235-2e32-2e38-2d3075627500
+	driverUUID         = 6c6c766d-7069-7065-5555-494400000000

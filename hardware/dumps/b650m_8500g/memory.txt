@@ -1,0 +1,3 @@
+mem_info_vram_total 2147483648
+mem_info_vis_vram_total 2147483648
+mem_info_gtt_total 7121420288

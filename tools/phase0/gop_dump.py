@@ -197,15 +197,23 @@ def main():
     a = ap.parse_args()
 
     if a.compare:
-        same = True
-        for ip, b in PHOENIX1_BASES.items():
-            real = bases(a.compare, ip)
-            ok = real[:len(b)] == b[:len(real)]
-            same &= ok
-            print("%-5s %s  this chip: %s" % (ip, "same as Phoenix 1" if ok else "DIFFERENT",
-                                            " ".join("0x%x" % x for x in real)))
-        print("gop_regs.txt read at the right addresses" if same else
-              "gop_regs.txt was read at Phoenix 1 addresses that do not match this chip: its values are not valid")
+        # judge by the absolute addresses actually read, not by whole base lists
+        real = {ip: bases(a.compare, ip) for ip in PHOENIX1_BASES}
+        p1 = PHOENIX1_BASES
+        dmu_idx = sorted({idx for _, _, idx in DCN314})
+        checks = [
+            ("DMU", all(idx < len(real["DMU"]) and p1["DMU"][idx] == real["DMU"][idx] for idx in dmu_idx)),
+            ("MMHUB", all(p1["MMHUB"][idx] == real["MMHUB"][idx] for _, _, idx in MMHUB)),
+            # the mailboxes were read at every Phoenix 1 base: valid if this chip's base[0] (13.0.11, BASE_IDX 0)
+            # and base[1] (13.0.4, BASE_IDX 1) are among them
+            ("MP0", real["MP0"][0] in p1["MP0"]),
+            ("MP1", real["MP1"][0] in p1["MP1"]),
+        ]
+        for ip, ok in checks:
+            print("%-5s %s  this chip: %s" % (ip, "addresses read are right" if ok else "WRONG ADDRESSES",
+                                            " ".join("0x%x" % x for x in real[ip])))
+        print("gop_regs.txt is valid" if all(ok for _, ok in checks) else
+              "some gop_regs.txt sections were read at addresses that do not match this chip")
         return
 
     dev = "/sys/bus/pci/devices/" + a.bdf

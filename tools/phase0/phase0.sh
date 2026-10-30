@@ -57,8 +57,11 @@ driver)
     for k in /sys/class/drm/card*-*; do
         kk=$(basename "$k"); mkdir -p "$D/connectors/$kk"
         for f in status enabled modes dpms; do cat "$k/$f" > "$D/connectors/$kk/$f" 2>/dev/null; done
-        [ -s "$k/edid" ] && cp "$k/edid" "$D/connectors/$kk/edid.bin" && \
-            { command -v edid-decode >/dev/null && edid-decode "$k/edid" > "$D/connectors/$kk/edid.txt" 2>&1; }
+        # sysfs reports the edid attribute as size 0, so read it and test what came back
+        cat "$k/edid" > "$D/connectors/$kk/edid.bin" 2>/dev/null
+        if [ -s "$D/connectors/$kk/edid.bin" ]; then
+            command -v edid-decode >/dev/null && edid-decode "$D/connectors/$kk/edid.bin" > "$D/connectors/$kk/edid.txt" 2>&1
+        else rm -f "$D/connectors/$kk/edid.bin"; fi
     done
     for f in mem_info_vram_total mem_info_vis_vram_total mem_info_gtt_total; do
         echo "$f $(cat "$DEV/$f" 2>/dev/null)"; done > "$D/memory.txt"
@@ -93,11 +96,17 @@ trace)
     T=/sys/kernel/tracing
     # per-CPU buffer (x12 threads on the 8500G); stop when full rather than overwrite the start of init
     echo 0 > $T/tracing_on; echo 196608 > $T/buffer_size_kb; echo 0 > $T/options/overwrite; : > $T/trace
+    # amdgpu's tracepoints exist only once the module is loaded: load it with the device held back
+    # (driver_override "none"), enable the events, then bind the device
+    echo none > "$DEV/driver_override"
+    modprobe amdgpu dc="$DC" > "$D/modprobe.txt" 2>&1
     echo 1 > $T/events/amdgpu/amdgpu_device_wreg/enable
     echo 1 > $T/events/amdgpu/amdgpu_device_rreg/enable
     echo 1 > $T/tracing_on
-    modprobe amdgpu dc="$DC" > "$D/modprobe.txt" 2>&1
+    echo amdgpu > "$DEV/driver_override"
+    echo "$BDF" > /sys/bus/pci/drivers/amdgpu/bind 2>> "$D/modprobe.txt"
     sleep 25
+    echo > "$DEV/driver_override"
     echo 0 > $T/tracing_on
     xz -T0 < $T/trace > "$D/regtrace.txt.xz"
     dmesg > "$D/dmesg.txt"

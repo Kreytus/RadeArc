@@ -1,0 +1,96 @@
+[dtn begin]
+HUBBUB WM:      data_urgent  pte_meta_urgent         sr_enter          sr_exit  dram_clk_change
+WM_Set[0]:            8.458            0.000           19.916           17.916           20.208
+WM_Set[1]:            8.458            0.000           19.916           17.916           20.208
+WM_Set[2]:            8.458            0.000           19.916           17.916           20.208
+WM_Set[3]:            8.458            0.000           19.916           17.916           20.208
+
+HUBP:  format  addr_hi  width  height  rot  mir  sw_mode  dcc_en  blank_en  clock_en  ttu_dis  underflow   min_ttu_vblank       qos_low_wm      qos_high_wm
+[ 0]:      ah      80h   1920    1080   0h   0h      1bh       1         0         1        0         0h          526.125            0.000           59.250
+
+=======HUBP FL======
+HUBP FL:  Enabled  Done  adr_mode  width  tmz  xbar_sel_R  xbar_sel_G  xbar_sel_B  adr_hi  adr_low  REFCYC  Bias   Scale       Mode      Format
+[ 0]:      0h       0h      0       0         0h   0h       0h       0         0         0        0         0h     0     0     0
+
+=========RQ========
+HUBP:  drq_exp_m  prq_exp_m  mrq_exp_m  crq_exp_m  plane1_ba  L:chunk_s  min_chu_s  meta_ch_s  min_m_c_s  dpte_gr_s  mpte_gr_s  swath_hei  pte_row_h  C:chunk_s  min_chu_s  meta_ch_s  min_m_c_s  dpte_gr_s  mpte_gr_s  swath_hei  pte_row_h
+[ 0]:         2h         1h         1h         1h         0h         3h         3h         1h         3h         3h         0h         3h         4h         0h         0h         0h         0h         0h         0h         0h         0h
+========DLG========
+HUBP:  rc_hbe     dlg_vbe    min_d_y_n  rc_per_ht  rc_x_a_s   dst_y_a_s  dst_y_pf   dst_y_vvb  dst_y_rvb  dst_y_vfl  dst_y_rfl  rf_pix_fq  vratio_pf  vrat_pf_c  rc_pg_vbl  rc_pg_vbc  rc_mc_vbl  rc_mc_vbc  rc_pg_fll  rc_pg_flc  rc_mc_fll  rc_mc_flc  pr_nom_l   pr_nom_c   rc_pg_nl   rc_pg_nc   mr_nom_l   mr_nom_c   rc_mc_nl   rc_mc_nc   rc_ld_pl   rc_ld_pc   rc_ld_l    rc_ld_c    cha_cur0   ofst_cur1  cha_cur1   vr_af_vc0  ddrq_limt  x_rt_dlay  x_rp_dlay  x_rr_sfl  rc_td_grp
+[ 0]:        1fh        29h      1188h     1638eh        21h         0h        20h         4h         6h         0h         0h     14afdh    1e0000h     80000h        85h         0h       10ah       10ah         0h         0h         0h         0h       200h         0h      2c71h         0h       100h         0h      2c71h         0h        9ah         0h       136h         0h         0h         0h         0h         0h         0h         0h         0h         0h 0h
+========TTU========
+HUBP:  qos_ll_wm  qos_lh_wm  mn_ttu_vb  qos_l_flp  rc_rd_p_l  rc_rd_l    rc_rd_p_c  rc_rd_c    rc_rd_c0   rc_rd_pc0  rc_rd_c1   rc_rd_pc1  qos_lf_l   qos_rds_l  qos_lf_c   qos_rds_c  qos_lf_c0  qos_rds_c0 qos_lf_c1  qos_rds_c1
+[ 0]:         0h       58eh      3153h         eh       291h       52bh         0h         0h         0h         0h         0h         0h         8h         0h         8h         0h         0h         0h         0h         0h
+
+DPP:  DGAM ROM  DGAM ROM type  DGAM LUT  SHAPER mode  3DLUT mode  3DLUT bit depth  3DLUT size  RGAM mode  GAMUT adjust  C11        C12        C13        C14        C21        C22        C23        C24        C31        C32        C33        C34        
+[ 0]:        0           sRGB    Bypass       Bypass      Bypass           12-bit       9x9x9     Bypass        Bypass  0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000
+
+DPP Color Caps: input_lut_shared:0  icsc:1  dgam_ram:0  dgam_rom: srgb:1,bt2020:1,gamma2_2:1,pq:1,hlg:1  post_csc:1  gamcor:1  dgam_rom_for_yuv:0  3d_lut:1  blnd_lut:1  oscs:0
+
+MPCC:  OPP  DPP  MPCCBOT  MODE  ALPHA_MODE  PREMULT  OVERLAP_ONLY  IDLE  SHAPER mode  3DLUT mode  3DLUT bit-depth  3DLUT size  OGAM mode  OGAM LUT  GAMUT adjust  C11        C12        C13        C14        C21        C22        C23        C24        C31        C32        C33        C34        
+[ 0]:   0h   0h       fh     2           2        0             0     0       Bypass      Bypass           12-bit    17x17x17     Bypass         A  Bypass        0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000 0000000000
+
+MPC Color Caps: gamut_remap:1, 3dlut:2, ogam_ram:1, ocsc:1
+
+OTG:  v_bs  v_be  v_ss  v_se  vpol  vmax  vmin  vmax_sel  vmin_sel  h_bs  h_be  h_ss  h_se  hpol  htot  vtot  underflow blank_en
+[0]:  1121    41     0     5     0     0     0         0         0  2112   192     0    44     0  2199  1124          0        0
+
+DSC: CLOCK_EN  SLICE_WIDTH  Bytes_pp
+[0]: 0         0            0         
+
+[1]: 0         0            0         
+
+[2]: 0         0            0         
+
+[3]: 0         0            0         
+
+
+S_ENC: DSC_MODE  SEC_GSP7_LINE_NUM  VBID6_LINE_REFERENCE  VBID6_LINE_NUM  SEC_GSP7_ENABLE  SEC_STREAM_ENABLE
+[0  ]: 0         0                  0                     0               0                0                
+
+[1  ]: 0         0                  0                     0               0                0                
+
+[2  ]: 0         0                  0                     0               0                0                
+
+[3  ]: 0         0                  0                     0               0                0                
+
+[4  ]: 0         0                  0                     0               0                0                
+
+
+L_ENC: DPHY_FEC_EN  DPHY_FEC_READY_SHADOW  DPHY_FEC_ACTIVE_STATUS  DP_LINK_TRAINING_COMPLETE
+[0  ]: 0            0                      0                      0                        
+
+[1  ]: 0            0                      0                      0                        
+
+[2  ]: 0            0                      0                      0                        
+
+[3  ]: 0            0                      0                      0                        
+
+[4  ]: 0            0                      0                      0                        
+
+[5  ]: 0            0                      0                      0                        
+
+[6  ]: 0            0                      0                      0                        
+
+[7  ]: 0            0                      0                      0                        
+
+
+
+CALCULATED Clocks: dcfclk_khz:200000  dcfclk_deep_sleep_khz:10673  dispclk_khz:152380
+dppclk_khz:149411  max_supported_dppclk_khz:1200000  fclk_khz:500000  socclk_khz:400000
+
+MPC_CRC_RESULT_GB:0 MPC_CRC_RESULT_C:0 MPC_CRC_RESULT_AR:0
+DPP_TOP0_DPP_CRC_VAL_B_A:0 DPP_TOP0_DPP_CRC_VAL_R_G:0
+DP HPO S_ENC:  Enabled  OTG   Format   Depth   Vid   SDP   Compressed  Link
+[0]:                 0    0    4:4:4       6     0     0            0     0
+[1]:                 0    0    4:4:4       6     0     0            0     0
+[2]:                 0    0    4:4:4       6     0     0            0     0
+[3]:                 0    0    4:4:4       6     0     0            0     0
+
+DP HPO L_ENC:  Enabled  Mode   Lanes   Stream  Slots   VC Rate X    VC Rate Y
+[0]:                 0    TPS1     0        0      0     0     0
+
+[1]:                 0    TPS1     0        0      0     0     0
+
+
+[dtn end]

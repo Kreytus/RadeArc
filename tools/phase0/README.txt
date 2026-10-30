@@ -18,24 +18,18 @@ and the only thing that "writes" to the GPU is a normal amdgpu driver load at th
   Secure Boot            = Disabled
 Write down your BIOS version. Plug the monitor into the board port you want to use with macOS.
 
-=== BOOT 1 ===
+=== ONE BOOT ===
 1. Power on, press F12, pick the USB stick (the "UEFI:" entry).
-2. In the GRUB menu choose "Try or Install Ubuntu". When the installer window opens, close it / pick "Try Ubuntu".
-3. Optional: connect Wi-Fi or Ethernet (only for two extra tools; works without).
-4. Open Terminal (Ctrl+Alt+T) and run:
+2. In the GRUB menu (tap Esc if it does not show) highlight "Try or Install Ubuntu" and press  e
+3. On the line that starts with  linux  press End, type a space and:   modprobe.blacklist=amdgpu
+   Do not press Enter. Press F10 (or Ctrl+X).
+4. Choose "Try Ubuntu". Optional: connect Wi-Fi/Ethernet (only for two extra tools; works without).
+5. Open Terminal (Ctrl+Alt+T) and run:
        sudo bash /cdrom/phase0-kit/RUN_ME.sh
    If "/cdrom/phase0-kit" is not found, run:   ls /media/*/*  and use the path where phase0-kit is.
-5. It prints what to do for boot 2.
-
-=== BOOT 2 ===
-1. Reboot, F12, the stick again.
-2. In GRUB highlight "Try or Install Ubuntu", press  e
-3. Go to the line that starts with  linux  and add at its end:   modprobe.blacklist=amdgpu
-4. Press F10 (or Ctrl+X). Try Ubuntu again, open Terminal, run the same command:
-       sudo bash /cdrom/phase0-kit/RUN_ME.sh
-   The screen may flicker or go black for a few seconds near the end: that is expected, wait.
+   In step 2/3 the screen may flicker or go black for a few seconds: that is expected, wait.
 
 === SEND BACK ===
-phase0-8500g.tar.xz from the root of the stick (it is next to phase0-kit),
-plus: BIOS version, the BIOS values you used, and which port the monitor was on (HDMI or DisplayPort).
-If the script said "the stick is read-only", the file is in the Home folder instead: upload it with Firefox.
+phase0-8500g.tar.xz: the script says where it saved it (the stick, another USB drive, or the Home folder).
+If it is only in the Home folder, copy it to another USB stick or upload it with Firefox BEFORE shutting down.
+Plus: BIOS version, the BIOS values you used, and which port the monitor was on (HDMI or DisplayPort).

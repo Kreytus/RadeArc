@@ -4,7 +4,8 @@ gop_dump.py: read-only snapshot of the display pipe the firmware (GOP) lit, plus
 segments, on a Phoenix / Phoenix 2 APU. Run as root from a Linux live USB booted with
 modprobe.blacklist=amdgpu, so no driver has touched the display engine yet.
 
-  sudo python3 -I gop_dump.py --bdf 0000:XX:00.0 --disc <phase0-out>/driver/ip_discovery
+  sudo python3 -I gop_dump.py --bdf 0000:XX:00.0 [--disc <phase0-out>/driver/ip_discovery]
+  sudo python3 -I gop_dump.py --bdf x --compare <phase0-out>/driver/ip_discovery
 
 --disc is the ip_discovery tree that `phase0.sh driver` saved from a boot with amdgpu loaded. It gives
 the per-segment base addresses of DMU, MP0, MP1 and MMHUB for this exact chip, so nothing here assumes
@@ -171,6 +172,17 @@ MMHUB = [("MMMC_VM_FB_LOCATION_BASE", 0x08ec, 1), ("MMMC_VM_FB_LOCATION_TOP", 0x
          ("MMMC_VM_FB_OFFSET", 0x08d7, 1)]
 
 
+# Phoenix 1 bases from the Firebat U6C discovery table (nullarc hardware/dumps/firebat_u6c/ip_discovery.txt).
+# Used only when no discovery tree from this machine exists yet (the one-boot flow: these reads happen before amdgpu
+# loads, the real tree is saved right after, and --compare tells whether these bases were the right ones).
+PHOENIX1_BASES = {
+    "DMU": [0x12, 0xc0, 0x34c0, 0x9000, 0x2403c00],
+    "MP0": [0x4000, 0x16000, 0xdc0000, 0xe00000, 0xe40000, 0x243fc00],
+    "MP1": [0x4000, 0x16000, 0xdc0000, 0xe00000, 0xe40000, 0x243fc00],
+    "MMHUB": [0x13200, 0x1a000, 0x2408800],
+}
+
+
 def bases(disc, ip):
     p = os.path.join(disc, "die", "0", ip, "0", "base_addr")
     with open(p) as f:
@@ -180,8 +192,21 @@ def bases(disc, ip):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bdf", required=True, help="PCI address of the iGPU, e.g. 0000:0e:00.0")
-    ap.add_argument("--disc", required=True, help="saved ip_discovery directory from `phase0.sh driver`")
+    ap.add_argument("--disc", help="saved ip_discovery directory from `phase0.sh driver` (default: Phoenix 1 bases)")
+    ap.add_argument("--compare", metavar="DISC", help="only compare the Phoenix 1 bases with this discovery tree")
     a = ap.parse_args()
+
+    if a.compare:
+        same = True
+        for ip, b in PHOENIX1_BASES.items():
+            real = bases(a.compare, ip)
+            ok = real[:len(b)] == b[:len(real)]
+            same &= ok
+            print("%-5s %s  this chip: %s" % (ip, "same as Phoenix 1" if ok else "DIFFERENT",
+                                            " ".join("0x%x" % x for x in real)))
+        print("gop_regs.txt read at the right addresses" if same else
+              "gop_regs.txt was read at Phoenix 1 addresses that do not match this chip: its values are not valid")
+        return
 
     dev = "/sys/bus/pci/devices/" + a.bdf
     if os.path.exists(dev + "/driver"):
@@ -194,7 +219,11 @@ def main():
     if vid != 0x1002 or not (cmd & 2):
         sys.exit("not an AMD device, or memory decoding is off: refusing to read")
 
-    seg = {ip: bases(a.disc, ip) for ip in ("DMU", "MP0", "MP1", "MMHUB")}
+    if a.disc:
+        seg = {ip: bases(a.disc, ip) for ip in ("DMU", "MP0", "MP1", "MMHUB")}
+    else:
+        seg = PHOENIX1_BASES
+        print("bases: Phoenix 1 table (no discovery tree from this machine yet; checked afterwards with --compare)")
     for ip, b in seg.items():
         print("%-5s bases %s" % (ip, " ".join("0x%x" % x for x in b)))
 

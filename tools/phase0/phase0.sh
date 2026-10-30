@@ -75,14 +75,14 @@ driver)
 gop)
     D=$OUT/gop; mkdir -p "$D"
     [ -e "$DEV/driver" ] && { echo "a driver is bound to $BDF: boot with modprobe.blacklist=amdgpu"; exit 1; }
-    [ -d "$OUT/driver/ip_discovery" ] || { echo "run '$0 driver' first (in a normal boot)"; exit 1; }
     grep -q '\[none\]' /sys/kernel/security/lockdown 2>/dev/null || \
         echo "warning: kernel lockdown is on (Secure Boot?): PCI BAR reads will be refused"
     run "$D/lspci-gpu.txt" lspci -nnvvv -s "$BDF"
     cp "$DEV/resource" "$D/pci-resource.txt"
     cp /proc/cmdline "$D/cmdline.txt"
     run "$D/fb.txt" cat /proc/fb
-    python3 -I "$HERE/gop_dump.py" --bdf "$BDF" --disc "$OUT/driver/ip_discovery" > "$D/gop_regs.txt" 2>&1
+    DISC=(); [ -d "$OUT/driver/ip_discovery" ] && DISC=(--disc "$OUT/driver/ip_discovery")
+    python3 -I "$HERE/gop_dump.py" --bdf "$BDF" "${DISC[@]}" > "$D/gop_regs.txt" 2>&1
     cat "$D/gop_regs.txt"
     ;;
 trace)

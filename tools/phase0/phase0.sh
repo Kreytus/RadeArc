@@ -4,7 +4,8 @@
 #
 #   sudo bash phase0.sh driver  [out]   boot 1: normal boot, amdgpu loaded, monitor on the iGPU output
 #   sudo bash phase0.sh gop     [out]   boot 2: kernel cmdline modprobe.blacklist=amdgpu (GOP still drives the monitor)
-#   sudo bash phase0.sh trace   [out] [dc]  boot 2, after `gop`: MMIO trace of amdgpu bring-up (dc=0 GFX only, dc=1 with display)
+#   sudo bash phase0.sh trace   [out] [dc]  boot 2, after `gop`: MMIO trace of amdgpu bring-up (dc=1 default: GFX + display;
+#                                           dc=0 leaves the screen black, amdgpu evicts the firmware framebuffer)
 #
 # out defaults to ./phase0-out. Put it on the USB stick and send the whole directory back as a tarball.
 set -u
@@ -86,11 +87,12 @@ gop)
     ;;
 trace)
     # Same method as nullarc tools/linux-trace/trace.sh (amdgpu_device_wreg/rreg tracepoints), version-independent.
-    DC=${3:-0}; D=$OUT/trace-dc$DC; mkdir -p "$D"
+    DC=${3:-1}; D=$OUT/trace-dc$DC; mkdir -p "$D"
     [ -e "$DEV/driver" ] && { echo "amdgpu already bound: boot with modprobe.blacklist=amdgpu"; exit 1; }
     mount -t tracefs nodev /sys/kernel/tracing 2>/dev/null || true
     T=/sys/kernel/tracing
-    echo 0 > $T/tracing_on; echo 524288 > $T/buffer_size_kb; : > $T/trace
+    # per-CPU buffer (x12 threads on the 8500G); stop when full rather than overwrite the start of init
+    echo 0 > $T/tracing_on; echo 196608 > $T/buffer_size_kb; echo 0 > $T/options/overwrite; : > $T/trace
     echo 1 > $T/events/amdgpu/amdgpu_device_wreg/enable
     echo 1 > $T/events/amdgpu/amdgpu_device_rreg/enable
     echo 1 > $T/tracing_on

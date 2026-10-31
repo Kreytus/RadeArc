@@ -1,5 +1,6 @@
 //
-//  PhxBringup.cpp — Phoenix (Radeon 780M, 1002:1900) bring-up kext, step E1.
+//  PhxBringup.cpp — Phoenix (Radeon 780M, 1002:1900) and Phoenix 2 (Radeon 740M, 1002:15C8) bring-up kext, step E1.
+//  The chip is told from its IP discovery table (identifyChip, rdna3_chip_profile), not from the PCI id.
 //
 //  Publishes the service the RADV Darwin backend opens (class PhxBringup, user client type 'N48N')
 //  and answers ABI v1 selectors 0..8 with the same rules as Mesa's in-process mock kext
@@ -21,8 +22,9 @@
 #include <sys/sysctl.h>
 
 #include "PhxNativeABI.h"
+#include "rdna3_chip_profile.h"
 
-#define PHX_KEXT_BUILD 32u
+#define PHX_KEXT_BUILD 33u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -47,9 +49,10 @@ struct PhxGfxRbFrame {
 } __attribute__((packed));
 static_assert(sizeof(PhxGfxRbFrame) == 64, "PhxGfxRbFrame must be 64 B");
 
-// Canned "phoenix" table (Mesa amdgpu_devices.c): GB_ADDR_CONFIG and GC 11.0.1.
-static constexpr uint32_t kGbAddrConfig = 0x00000242;
-static constexpr uint32_t kGcVersion = (11u << 16) | (0u << 8) | 1u;
+// GB_ADDR_CONFIG RADV is told before the GPU runs (once it runs, the register is read: Linux gfx_v11_0_gpu_early_init
+// reads it too). Phoenix: Mesa amdgpu_devices.c canned "phoenix" table (upstream's constant). Phoenix 2: measured on the
+// Ryzen 5 8500G (RADV GB_ADDR_CONFIG, hardware/dumps/b650m_8500g/radv-info.txt).
+static uint32_t gbAddrConfigBeforeBringup(rdna3::PhxChip c) { return c == rdna3::PhxChip::Phoenix1 ? 0x242u : 0x142u; }
 
 // Pools reported to RADV. E1 backs every BO with system memory, so these are budgets, not hardware:
 // BAR0 is 256 MiB on this machine, the UMA carve-out 6 GiB.
@@ -89,6 +92,16 @@ public:
     IOReturn pspCtl(uint32_t op, uint32_t arg, uint64_t out[4]);
     IOReturn pspRaw(uint32_t cmdId, const uint32_t words[6], uint64_t out[4]);
     bool debugEnabled() const { return debug; }
+    // The chip, from the IP discovery table (rdna3_chip_profile): nullptr = unknown, nothing but reads is allowed.
+    const rdna3::ChipProfile *chipProfile() const { return chip; }
+    // Commands that write the GPU (PSP, SMU, registers, VRAM, doorbells, queues, the claim) are refused unless the chip
+    // is known and its bring-up is implemented. Phoenix 2 bring-up (gc_11_0_4 / psp_13_0_11 firmware) comes in a later
+    // step; until then the upstream scripts would load Phoenix 1 firmware into it, so it is read-only.
+    bool hwWritesAllowed() const { return chip && chip->chip == rdna3::PhxChip::Phoenix1; }
+    uint32_t gbAddrConfig() const;
+    uint32_t gcVersion() const {
+        return chip ? (uint32_t(chip->gc.major) << 16) | (uint32_t(chip->gc.minor) << 8) | chip->gc.revision : 0;
+    }
     // E8: GPU execution. The userspace bring-up maps MES queues (compute = 0, gfx = 1) and hands them over (adoptQueue);
     // user BOs are then mapped into the VMID 8 page table and SUBMIT writes INDIRECT_BUFFERs into the queue's ring.
     IOReturn adoptQueue(const uint64_t in[6]);
@@ -110,10 +123,13 @@ private:
     IOReturn pspRunCmd(uint32_t cmdId, const uint32_t *unionWords, uint32_t nWords, uint64_t out[4]);
     void hdpFlush() const;
     void readFbLayout();
+    void identifyChip();
     void clearRing();
 
     IOPCIDevice *pci{nullptr};
     IOMemoryMap *mmio{nullptr};
+    const rdna3::ChipProfile *chip{nullptr};
+    rdna3::ChipRegs cr{};   // valid when chip is set
     IOLock *smuLock{nullptr};
     // UMA carve-out ("VRAM"): GPU MC address range and the system physical address behind it.
     uint64_t fbMcBase{0}, fbSize{0}, fbPhys{0};
@@ -295,11 +311,13 @@ bool PhxBringup::start(IOService *provider) {
     gpuLock = IOLockAlloc();
     uint32_t dbg = 0;
     debug = PE_parse_boot_argn("phxdebug", &dbg, sizeof(dbg)) && dbg == 1;
-    if (mmio) {
+    if (mmio)
+        identifyChip();
+    if (chip) {
         readFbLayout();
         // HDP flush window: the NBIO remap register holds the BAR5 byte offset where writing 0 flushes the
         // host data path. Accept it only if it is a plausible dword offset inside our MMIO aperture.
-        uint32_t remap = rreg(PHX_NBIO_REMAP_HDP_MEM_FLUSH_CNTL);
+        uint32_t remap = rreg(cr.nbio_remap_hdp_mem_flush_cntl);
         if (remap && remap != 0xFFFFFFFFu && (remap & 3) == 0 && remap + 4 <= mmio->getLength())
             hdpFlushDword = remap >> 2;
         setProperty("phx-hdp-flush-dword", hdpFlushDword, 32);
@@ -309,8 +327,9 @@ bool PhxBringup::start(IOService *provider) {
     setProperty("phx-debug", debug);
     setProperty("phx-fb-aper-phys", fbAperPhys, 64);
     setProperty("phx-fb-aper-len", fbAperLen, 64);
-    IOLog("PhxBringup: service up (mmio %s, bar0 %s %llu MiB, debug %d)\n", mmio ? "mapped" : "unmapped",
-          fbAper ? "mapped" : "unmapped", (unsigned long long)(fbAperLen >> 20), debug);
+    IOLog("PhxBringup: service up (mmio %s, bar0 %s %llu MiB, debug %d, chip %s%s)\n", mmio ? "mapped" : "unmapped",
+          fbAper ? "mapped" : "unmapped", (unsigned long long)(fbAperLen >> 20), debug, chip ? chip->name : "unknown",
+          chip && !hwWritesAllowed() ? ", read-only" : "");
     registerService();
     return true;
 }
@@ -370,20 +389,113 @@ void PhxBringup::wreg(uint32_t reg, uint32_t value) const {
     reinterpret_cast<volatile uint32_t *>(mmio->getVirtualAddress())[reg] = value;
 }
 
+// "AMD Radeon <model>" from the CPU brand string's "Radeon <model>", else "AMD Radeon Graphics".
+static void cpuGpuName(char *out, size_t n) {
+    char brand[49] = {0};
+    for (uint32_t i = 0; i < 3; i++) {
+        uint32_t a = 0x80000002u + i, b, c, d;
+        __asm__ volatile("cpuid" : "+a"(a), "=b"(b), "=c"(c), "=d"(d));
+        memcpy(brand + 16 * i, &a, 4); memcpy(brand + 16 * i + 4, &b, 4);
+        memcpy(brand + 16 * i + 8, &c, 4); memcpy(brand + 16 * i + 12, &d, 4);
+    }
+    strlcpy(out, "AMD Radeon Graphics", n);
+    for (const char *p = brand; *p; p++) {
+        if (strncmp(p, "Radeon ", 7) != 0)
+            continue;
+        size_t len = 0;
+        while (p[7 + len] && p[7 + len] != ' ' && len < 8)
+            len++;
+        if (len && p[7 + len - 1] == 'M') {   // a model like "740M", not "Graphics"
+            strlcpy(out, "AMD Radeon ", n);
+            strlcat(out, p + 7, n < 11 + len + 1 ? n : 11 + len + 1);
+        }
+        break;
+    }
+}
+
+// Reads the IP discovery table the way Linux does before it knows the chip's register layout and picks the chip
+// profile from it (amdgpu_discovery.c: amdgpu_discovery_get_tmr_info, amdgpu_discovery_read_binary_from_mem ->
+// amdgpu_device.c amdgpu_device_mm_access): wait up to 2 s for the IFWI-init flag (bit 31) in MP0 C2PMSG_33, take the
+// table at RCC_CONFIG_MEMSIZE MiB - DISCOVERY_TMR_OFFSET (64 KiB), DISCOVERY_TMR_SIZE (10 KiB), or where
+// DRIVER_SCRATCH_0..2 point, and read it through the MM_INDEX/MM_DATA window. MM_INDEX/MM_INDEX_HI are the only
+// registers written. These fixed offsets are the ones Linux uses before discovery, for every chip.
+void PhxBringup::identifyChip() {
+    constexpr uint32_t mmMM_INDEX = 0x0, mmMM_DATA = 0x1, mmMM_INDEX_HI = 0x6;
+    constexpr uint32_t mmDRIVER_SCRATCH_0 = 0x94, mmDRIVER_SCRATCH_1 = 0x95, mmDRIVER_SCRATCH_2 = 0x96;
+    constexpr uint32_t mmRCC_CONFIG_MEMSIZE = 0xde3, mmMP0_SMN_C2PMSG_33 = 0x16061;
+    constexpr uint64_t kTmrOffset = 64u << 10;
+    constexpr uint32_t kTmrSize = 10u << 10, kMaxSize = 64u << 10, kBinarySignature = 0x28211407;
+    if ((static_cast<uint64_t>(mmMP0_SMN_C2PMSG_33) + 1) * 4 > mmio->getLength()) {
+        setProperty("phx-chip", "unknown (BAR5 too small)");
+        return;
+    }
+    uint32_t ms = 0;
+    while (!(rreg(mmMP0_SMN_C2PMSG_33) & 0x80000000u) && ms < 2000) {
+        IOSleep(1);
+        ms++;
+    }
+    auto vram32 = [this](uint64_t pos) {
+        wreg(mmMM_INDEX, static_cast<uint32_t>(pos) | 0x80000000u);
+        wreg(mmMM_INDEX_HI, static_cast<uint32_t>(pos >> 31));
+        return rreg(mmMM_DATA);
+    };
+    const uint32_t memsizeMb = rreg(mmRCC_CONFIG_MEMSIZE);
+    uint64_t off = 0;
+    uint32_t size = kTmrSize, sig = 0;
+    if (memsizeMb && memsizeMb != 0xFFFFFFFFu) {
+        off = (static_cast<uint64_t>(memsizeMb) << 20) - kTmrOffset;
+        sig = vram32(off);
+    }
+    if (sig != kBinarySignature && rreg(mmDRIVER_SCRATCH_2)) {
+        size = rreg(mmDRIVER_SCRATCH_2);
+        off = (static_cast<uint64_t>(rreg(mmDRIVER_SCRATCH_1)) << 32) | rreg(mmDRIVER_SCRATCH_0);
+        sig = vram32(off);
+    }
+    setProperty("phx-discovery-offset", off, 64);
+    if (sig != kBinarySignature) {
+        setProperty("phx-chip", "unknown (no discovery table)");
+        return;
+    }
+    size = (size > kMaxSize ? kMaxSize : size) & ~3u;
+    uint32_t *buf = static_cast<uint32_t *>(IOMalloc(size));
+    if (!buf) {
+        setProperty("phx-chip", "unknown (no memory)");
+        return;
+    }
+    for (uint32_t i = 0; i < size / 4; i++)
+        buf[i] = vram32(off + static_cast<uint64_t>(i) * 4);
+    rdna3::IpDiscoveryParser disc;
+    const rdna3::ChipProfile *p = nullptr;
+    if (disc.init(reinterpret_cast<const uint8_t *>(buf), size) && (p = rdna3::chip_profile(disc)) &&
+        rdna3::chip_regs(disc, *p, cr))
+        chip = p;
+    if (OSData *bin = OSData::withBytes(buf, size)) {
+        setProperty("phx-discovery-bin", bin);   // tools/parse_discovery.py reads this
+        bin->release();
+    }
+    IOFree(buf, size);
+    setProperty("phx-chip", chip ? chip->name : "unknown (IP versions not supported)");
+    if (chip)
+        setProperty("phx-gc-version", gcVersion(), 32);
+}
+
 // FB location (MC, 16 MiB units, FB_BASE bits 23:0) and the system physical address of the carve-out (FB_OFFSET << 24).
 void PhxBringup::readFbLayout() {
-    uint32_t base = rreg(PHX_MMMC_VM_FB_LOCATION_BASE) & 0x00FFFFFF;
-    uint32_t top = rreg(PHX_MMMC_VM_FB_LOCATION_TOP) & 0x00FFFFFF;
+    uint32_t base = rreg(cr.mmhub_fb_location_base) & 0x00FFFFFF;
+    uint32_t top = rreg(cr.mmhub_fb_location_top) & 0x00FFFFFF;
     fbMcBase = static_cast<uint64_t>(base) << 24;
     fbSize = top >= base ? (static_cast<uint64_t>(top - base) + 1) << 24 : 0;
-    fbPhys = static_cast<uint64_t>(rreg(PHX_MMMC_VM_FB_OFFSET)) << 24;
+    fbPhys = static_cast<uint64_t>(rreg(cr.mmhub_fb_offset)) << 24;
     setProperty("phx-fb-mc-base", fbMcBase, 64);
     setProperty("phx-fb-size", fbSize, 64);
     setProperty("phx-fb-phys", fbPhys, 64);
     // About This Mac / System Information name the GPU from the PCI device's "model" and size its memory from
-    // "VRAM,totalMB"; without them the 780M read "Display, 15 MB" (the boot framebuffer)
-    static const char kModel[] = "AMD Radeon 780M";
-    if (OSData *m = OSData::withBytes(kModel, sizeof(kModel))) {
+    // "VRAM,totalMB"; without them the 780M read "Display, 15 MB" (the boot framebuffer). Phoenix 2 parts are named
+    // after the CPU brand string ("AMD Ryzen 5 8500G w/ Radeon 740M Graphics" on the 8500G).
+    char kModel[40] = "AMD Radeon 780M";
+    if (chip->chip == rdna3::PhxChip::Phoenix2)
+        cpuGpuName(kModel, sizeof kModel);
+    if (OSData *m = OSData::withBytes(kModel, strlen(kModel) + 1)) {
         pci->setProperty("model", m);
         m->release();
     }
@@ -404,7 +516,7 @@ void PhxBringup::clearRing() {
 void PhxBringup::hdpFlush() const {
     if (hdpFlushDword)
         wreg(hdpFlushDword, 0);
-    (void)rreg(0x0DE3);   // read-back barrier (GRBM_STATUS), as in the reference
+    (void)rreg(0x0DE3);   // read-back barrier (RCC_CONFIG_MEMSIZE, amdgpu_discovery.c; any read does), as in the reference
 }
 
 // Read-only: count dwords from VRAM at byteOff, through the BAR0 aperture. Used by debug selector 102 to
@@ -859,7 +971,7 @@ IOReturn PhxBringup::vramWrite(uint32_t byteOff, uint32_t value) {
 // psp_wait_for(C2PMSG_64, MBOX_TOS_RESP_FLAG, MBOX_TOS_RESP_MASK): response flag set and status 0.
 bool PhxBringup::pspWaitTos(uint32_t timeoutMs) const {
     for (uint32_t i = 0; i < timeoutMs * 10; i++) {
-        if ((rreg(PHX_PSP_C2PMSG_64) & PHX_MBOX_TOS_MASK) == PHX_MBOX_TOS_READY)
+        if ((rreg(cr.psp_c2pmsg_64) & PHX_MBOX_TOS_MASK) == PHX_MBOX_TOS_READY)
             return true;
         IODelay(100);
     }
@@ -871,6 +983,8 @@ bool PhxBringup::pspWaitTos(uint32_t timeoutMs) const {
 // framebuffer aperture, which is MMIO above system RAM — so the PSP sees the bytes and the macOS heap is never
 // touched. The MC address handed to the PSP is fbMcBase + carveOffset.
 IOReturn PhxBringup::pspRing(uint32_t op, uint64_t carveOffset, uint64_t out[4]) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !fbAper || !fbMcBase)
         return kIOReturnNotReady;
     IOReturn r = kIOReturnSuccess;
@@ -893,10 +1007,10 @@ IOReturn PhxBringup::pspRing(uint32_t op, uint64_t carveOffset, uint64_t out[4])
                 r = kIOReturnNotReady;       // SOS not ready to accept the ring
             } else {
                 ringMc = fbMcBase + carveOffset;
-                wreg(PHX_PSP_C2PMSG_69, static_cast<uint32_t>(ringMc));
-                wreg(PHX_PSP_C2PMSG_70, static_cast<uint32_t>(ringMc >> 32));
-                wreg(PHX_PSP_C2PMSG_71, PHX_PSP_RING_SIZE);
-                wreg(PHX_PSP_C2PMSG_64, PHX_PSP_RING_TYPE_KM << 16);
+                wreg(cr.psp_c2pmsg_69, static_cast<uint32_t>(ringMc));
+                wreg(cr.psp_c2pmsg_70, static_cast<uint32_t>(ringMc >> 32));
+                wreg(cr.psp_c2pmsg_71, PHX_PSP_RING_SIZE);
+                wreg(cr.psp_c2pmsg_64, PHX_PSP_RING_TYPE_KM << 16);
                 IOSleep(20);
                 if (!pspWaitTos(2000)) {
                     r = kIOReturnTimeout;    // raw C2PMSG_64 (with PSP status in bits 15:0) returned in out[0]
@@ -923,12 +1037,12 @@ IOReturn PhxBringup::pspRing(uint32_t op, uint64_t carveOffset, uint64_t out[4])
                         cmd[i] = 0;
                         fen[i] = 0;
                     }
-                    wreg(PHX_PSP_C2PMSG_67, 0);
+                    wreg(cr.psp_c2pmsg_67, 0);
                 }
             }
         }
     } else if (op == 2) {
-        wreg(PHX_PSP_C2PMSG_64, PHX_GFX_CTRL_CMD_ID_DESTROY_RINGS);
+        wreg(cr.psp_c2pmsg_64, PHX_GFX_CTRL_CMD_ID_DESTROY_RINGS);
         IOSleep(20);
         if (!pspWaitTos(2000))
             r = kIOReturnTimeout;
@@ -936,9 +1050,9 @@ IOReturn PhxBringup::pspRing(uint32_t op, uint64_t carveOffset, uint64_t out[4])
     } else if (op != 3) {
         r = kIOReturnBadArgument;
     }
-    out[0] = rreg(PHX_PSP_C2PMSG_64);
+    out[0] = rreg(cr.psp_c2pmsg_64);
     out[1] = ringMc;
-    out[3] = rreg(PHX_PSP_C2PMSG_67);
+    out[3] = rreg(cr.psp_c2pmsg_67);
     IOLockUnlock(smuLock);
     return r;
 }
@@ -962,7 +1076,7 @@ IOReturn PhxBringup::pspRunCmd(uint32_t cmdId, const uint32_t *unionWords, uint3
     fen[0] = 0;
 
     // Ring frame at the slot the current wptr points to.
-    uint32_t wptr = rreg(PHX_PSP_C2PMSG_67);
+    uint32_t wptr = rreg(cr.psp_c2pmsg_67);
     const uint32_t ringSizeDw = PHX_PSP_RING_SIZE / 4;         // 1024
     const uint32_t frameSizeDw = PHX_PSP_GFX_FRAME_SIZE / 4;   // 16
     uint32_t slot = (wptr % ringSizeDw == 0) ? 0 : wptr / frameSizeDw;
@@ -985,7 +1099,7 @@ IOReturn PhxBringup::pspRunCmd(uint32_t cmdId, const uint32_t *unionWords, uint3
     __asm__ __volatile__("sfence" ::: "memory");
     hdpFlush();
     wptr = (wptr + frameSizeDw) % ringSizeDw;
-    wreg(PHX_PSP_C2PMSG_67, wptr);
+    wreg(cr.psp_c2pmsg_67, wptr);
 
     // Wait for the PSP to write the fence value into VRAM (BAR0 read bypasses the CPU cache).
     uint32_t observed = 0, us = 0;
@@ -1009,6 +1123,8 @@ IOReturn PhxBringup::pspRunCmd(uint32_t cmdId, const uint32_t *unionWords, uint3
 
 // Selector 103: no-payload query command (FB_FW_RESERV_ADDR/EXT only) — validates the ring without touching GPU power.
 IOReturn PhxBringup::pspSubmit(uint32_t cmdId, uint64_t out[4]) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !fbAper)
         return kIOReturnNotReady;
     if (cmdId != PHX_PSP_GFX_CMD_FB_FW_RESERV_ADDR && cmdId != PHX_PSP_GFX_CMD_FB_FW_RESERV_EXT_ADDR)
@@ -1046,6 +1162,8 @@ IOReturn PhxBringup::fwStage(uint32_t dstOffset, const void *bytes, uint32_t len
 
 // Selector 105: submit GFX_CMD_ID_LOAD_IP_FW for the firmware already staged in fw_buf at fwBufOffset.
 IOReturn PhxBringup::loadIpFw(uint32_t fwType, uint32_t fwBufOffset, uint32_t size, uint64_t out[4]) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !fbAper)
         return kIOReturnNotReady;
     if ((fwBufOffset & 3) || size == 0 || static_cast<uint64_t>(fwBufOffset) + size > fwBufSize)
@@ -1065,6 +1183,8 @@ IOReturn PhxBringup::loadIpFw(uint32_t fwType, uint32_t fwBufOffset, uint32_t si
 
 // Selector 106: op 1 = SETUP_TMR (driver-managed TMR, Phoenix psp_13_0_4 is not in psp_skip_tmr), op 2 = AUTOLOAD_RLC.
 IOReturn PhxBringup::pspCtl(uint32_t op, uint32_t arg, uint64_t out[4]) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !fbAper)
         return kIOReturnNotReady;
     IOLockLock(smuLock);
@@ -1097,6 +1217,8 @@ IOReturn PhxBringup::pspCtl(uint32_t op, uint32_t arg, uint64_t out[4]) {
 // Selector 107: submit an arbitrary GPCOM command with six caller-supplied union dwords. For bring-up
 // experiments (SETUP_TMR / LOAD_TOC parameter sweeps) without rebuilding the kext.
 IOReturn PhxBringup::pspRaw(uint32_t cmdId, const uint32_t words[6], uint64_t out[4]) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !fbAper)
         return kIOReturnNotReady;
     IOLockLock(smuLock);
@@ -1108,7 +1230,7 @@ IOReturn PhxBringup::pspRaw(uint32_t cmdId, const uint32_t words[6], uint64_t ou
 // Polls the SMU response register for up to 2 s (Linux: usec_timeout * 20); 0 means no answer.
 uint32_t PhxBringup::smuPoll() const {
     for (uint32_t i = 0; i < 200000; i++) {
-        uint32_t r = rreg(PHX_SMU_RESP_REG);
+        uint32_t r = rreg(cr.smu_resp);
         if (r)
             return r;
         IODelay(10);
@@ -1118,6 +1240,8 @@ uint32_t PhxBringup::smuPoll() const {
 
 // One SMU 13.0.4 mailbox transaction, the sequence of Linux smu_msg_v1_send_msg().
 IOReturn PhxBringup::smuMessage(uint32_t msg, uint32_t arg, uint32_t *resp, uint32_t *argAfter) {
+    if (!hwWritesAllowed())
+        return kIOReturnUnsupported;
     if (!mmio || !smuLock)
         return kIOReturnNotReady;
     IOLockLock(smuLock);
@@ -1127,14 +1251,27 @@ IOReturn PhxBringup::smuMessage(uint32_t msg, uint32_t arg, uint32_t *resp, uint
         return kIOReturnBusy;
     }
     smuUsed = true;
-    wreg(PHX_SMU_RESP_REG, 0);
-    wreg(PHX_SMU_ARG_REG, arg);
-    wreg(PHX_SMU_MSG_REG, msg);
+    wreg(cr.smu_resp, 0);
+    wreg(cr.smu_arg, arg);
+    wreg(cr.smu_msg, msg);
     uint32_t r = smuPoll();
     *resp = r;
-    *argAfter = rreg(PHX_SMU_ARG_REG);
+    *argAfter = rreg(cr.smu_arg);
     IOLockUnlock(smuLock);
     return r ? kIOReturnSuccess : kIOReturnTimeout;
+}
+
+// Once the GPU runs, GB_ADDR_CONFIG is read from the hardware (Linux: gfx_v11_0.c gfx_v11_0_gpu_early_init); before,
+// the profile's value. 0 on an unknown chip.
+uint32_t PhxBringup::gbAddrConfig() const {
+    if (!chip)
+        return 0;
+    if (gpuReady()) {
+        uint32_t v = rreg(cr.gb_addr_config);
+        if (v && v != 0xFFFFFFFFu)
+            return v;
+    }
+    return gbAddrConfigBeforeBringup(chip->chip);
 }
 
 bool PhxBringup::claimSession() { return OSCompareAndSwap(0, 1, &sessionOpen); }
@@ -1270,6 +1407,18 @@ static bool shape(const IOExternalMethodArguments *a, uint32_t sin, uint32_t sou
            a->structureOutputSize == stout && !a->structureInputDescriptor && !a->structureOutputDescriptor;
 }
 
+// Debug selectors that write the GPU: PSP, SMU, registers, VRAM, doorbells, firmware staging, queue adoption, the claim.
+static bool writesGpu(uint32_t sel) {
+    switch (sel) {
+    case PHXN_SEL_DBG_SMU: case PHXN_SEL_DBG_PSP_RING: case PHXN_SEL_DBG_PSP_SUBMIT: case PHXN_SEL_DBG_FW_STAGE:
+    case PHXN_SEL_DBG_PSP_LOADIPFW: case PHXN_SEL_DBG_PSP_CTL: case PHXN_SEL_DBG_PSP_RAW: case PHXN_SEL_DBG_WRITE_REG:
+    case PHXN_SEL_DBG_VRAM_WRITE: case PHXN_SEL_DBG_DOORBELL: case PHXN_SEL_DBG_ADOPTQ: case PHXN_SEL_DBG_CLAIM:
+        return true;
+    default:
+        return false;
+    }
+}
+
 IOReturn IOAccelPhxNativeClient::externalMethod(uint32_t selector, IOExternalMethodArguments *a,
                                                 IOExternalMethodDispatch *, OSObject *, void *) {
     if (selector == PHXN_SEL_WAITSEQ)
@@ -1279,6 +1428,8 @@ IOReturn IOAccelPhxNativeClient::externalMethod(uint32_t selector, IOExternalMet
     IOReturn r;
     if (selector != PHXN_SEL_HELLO && !hello) {
         r = kIOReturnNotReady;
+    } else if (writesGpu(selector) && !owner->hwWritesAllowed()) {
+        r = kIOReturnUnsupported;   // unknown chip, or one whose bring-up is not implemented yet: reads only
     } else {
         switch (selector) {
         case PHXN_SEL_HELLO:     r = doHello(a); break;
@@ -1336,8 +1487,8 @@ IOReturn IOAccelPhxNativeClient::doQueryInfo(IOExternalMethodArguments *a) {
     inf.reserved[2] = PHXN_ABI_MINOR;
     inf.flags = PHXN_INFO_S1B_POSITIVE | PHXN_INFO_NATIVE_BOOT;
     inf.vmid = PHXN_VMID;
-    inf.gb_addr_config = kGbAddrConfig;
-    inf.gc_version = kGcVersion;
+    inf.gb_addr_config = owner->gbAddrConfig();   // 0 on an unknown chip: RADV then refuses the device
+    inf.gc_version = owner->gcVersion();
     inf.ring_size_dw = 4096;
     inf.max_ibs = PHXN_MAX_IBS;
     inf.vram_vis_total = kVisTotal;

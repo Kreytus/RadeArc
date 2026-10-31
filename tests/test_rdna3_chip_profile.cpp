@@ -42,6 +42,9 @@ static void test_phoenix1() {
     assert(r.psp_c2pmsg_58 == 0x1607a);
     assert(r.smu_msg == 0x16282 && r.smu_arg == 0x16292 && r.smu_resp == 0x1629a);
     assert(r.gb_addr_config == 0x263e);   // GC base[0] 0x1260 + 0x13de
+    // the MMHUB FB and NBIO HDP-remap dwords upstream hardcodes (PhxNativeABI.h)
+    assert(r.mmhub_fb_location_base == 0x1a8ec && r.mmhub_fb_location_top == 0x1a8ed && r.mmhub_fb_offset == 0x1a8d7);
+    assert(r.nbio_remap_hdp_mem_flush_cntl == 0xe4d);
     check_fw(d, HwId::Gc, "gc_11_0_1");
     check_fw(d, HwId::Mp0, "psp_13_0_4");
     check_fw(d, HwId::Sdma0, "sdma_6_0_1");
@@ -63,6 +66,9 @@ static void test_phoenix2() {
     assert(r.psp_c2pmsg_64 == 0x16080 && r.psp_c2pmsg_81 == 0x16091);
     assert(r.smu_msg == 0x16282 && r.smu_arg == 0x16292 && r.smu_resp == 0x1629a);
     assert(r.gb_addr_config == 0x263e);
+    // read on the 8500G at these dwords: FB_LOCATION 0x8000..0x807f, FB_OFFSET 0x3e0 (docs/PHOENIX2_FACTS.md)
+    assert(r.mmhub_fb_location_base == 0x1a8ec && r.mmhub_fb_location_top == 0x1a8ed && r.mmhub_fb_offset == 0x1a8d7);
+    assert(r.nbio_remap_hdp_mem_flush_cntl == 0xe4d);   // NBIF 7.7.1: same header and bases as 7.7.0
     check_fw(d, HwId::Gc, "gc_11_0_4");
     check_fw(d, HwId::Mp0, "psp_13_0_11");
     check_fw(d, HwId::Sdma0, "sdma_6_0_1");

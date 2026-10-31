@@ -21,7 +21,8 @@ struct IpVersion {
 struct ChipProfile {
     PhxChip chip;
     const char *name;
-    IpVersion gc, mp0, mp1;     // must all match the discovery table exactly
+    IpVersion gc, mp0, mp1;     // must all match the discovery table exactly,
+    IpVersion mmhub, nbif;      // as must these (ChipRegs takes register offsets from their headers)
     // MP0 / MP1 segment (BASE_IDX) of the PSP and SMU mailbox registers.
     uint8_t psp_mbox_base_idx;
     uint8_t smu_mbox_base_idx;
@@ -34,6 +35,8 @@ struct ChipRegs {
     uint32_t psp_c2pmsg_58, psp_c2pmsg_64, psp_c2pmsg_67, psp_c2pmsg_69, psp_c2pmsg_70, psp_c2pmsg_71, psp_c2pmsg_81;
     uint32_t smu_msg, smu_arg, smu_resp;
     uint32_t gb_addr_config;
+    uint32_t mmhub_fb_location_base, mmhub_fb_location_top, mmhub_fb_offset;
+    uint32_t nbio_remap_hdp_mem_flush_cntl;
 };
 
 // The profile for this discovery table, or nullptr (unknown chip: do not touch the hardware).

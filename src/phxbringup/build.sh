@@ -12,11 +12,15 @@ CFLAGS="-arch x86_64 -mmacosx-version-min=11.0 -mkernel -fno-builtin -fno-common
   -I$MKSDK/Headers -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -Os -Wall"
 
 clang -x c $CFLAGS -c "$HERE/kmod_info.c" -o "$HERE/build/kmod_info.o"
-clang++ $CFLAGS -std=c++17 -fapple-kext -fno-rtti -fno-exceptions \
-  -c "$HERE/PhxBringup.cpp" -o "$HERE/build/PhxBringup.o"
+CXXFLAGS="$CFLAGS -std=c++17 -fapple-kext -fno-rtti -fno-exceptions -I$HERE/../amd"
+clang++ $CXXFLAGS -c "$HERE/PhxBringup.cpp" -o "$HERE/build/PhxBringup.o"
+# the chip profile (src/amd, also unit-tested by make test): IP discovery parser + per-chip registers
+clang++ $CXXFLAGS -c "$HERE/../amd/rdna3_ip_discovery.cpp" -o "$HERE/build/rdna3_ip_discovery.o"
+clang++ $CXXFLAGS -c "$HERE/../amd/rdna3_chip_profile.cpp" -o "$HERE/build/rdna3_chip_profile.o"
 clang++ -arch x86_64 -mmacosx-version-min=11.0 -nostdlib -Xlinker -kext \
   -L"$MKSDK/Library/x86_64" -lkmod -lcc_kext \
   "$HERE/build/kmod_info.o" "$HERE/build/PhxBringup.o" \
+  "$HERE/build/rdna3_ip_discovery.o" "$HERE/build/rdna3_chip_profile.o" \
   -o "$OUT/Contents/MacOS/PhxBringup"
 cp "$HERE/Info.plist" "$OUT/Contents/Info.plist"
 echo "built $OUT"

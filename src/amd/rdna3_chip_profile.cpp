@@ -9,7 +9,7 @@ namespace {
 
 constexpr ChipProfile kProfiles[] = {
     {
-        PhxChip::Phoenix1, "Phoenix", {11, 0, 1}, {13, 0, 4}, {13, 0, 4},
+        PhxChip::Phoenix1, "Phoenix", {11, 0, 1}, {13, 0, 4}, {13, 0, 4}, {3, 0, 1}, {7, 7, 0},
         // psp_v13_0_4.c includes mp/mp_13_0_4_offset.h: regMP0_SMN_C2PMSG_*_BASE_IDX 1
         1,
         // smu_v13_0_4_ppt.c, smu_v13_0_4_init_msg_ctl: mmMP1_SMN_C2PMSG_66/82/90_BASE_IDX 1
@@ -18,7 +18,7 @@ constexpr ChipProfile kProfiles[] = {
         0x1,
     },
     {
-        PhxChip::Phoenix2, "Phoenix 2", {11, 0, 4}, {13, 0, 11}, {13, 0, 11},
+        PhxChip::Phoenix2, "Phoenix 2", {11, 0, 4}, {13, 0, 11}, {13, 0, 11}, {3, 0, 1}, {7, 7, 1},
         // amdgpu_psp.c psp_early_init: 13.0.11 -> psp_v13_0_set_psp_funcs; psp_v13_0.c includes
         // mp/mp_13_0_2_offset.h: regMP0_SMN_C2PMSG_*_BASE_IDX 0
         0,
@@ -39,6 +39,13 @@ constexpr uint32_t kMp1C2pmsg66 = 0x0282, kMp1C2pmsg82 = 0x0292, kMp1C2pmsg90 = 
 // gc/gc_11_0_0_offset.h (included by gfx_v11_0.c for 11.0.1 and 11.0.4): regGB_ADDR_CONFIG 0x13de, BASE_IDX 0
 constexpr uint32_t kGcGbAddrConfig = 0x13de;
 constexpr uint8_t kGcGbAddrConfigBaseIdx = 0;
+// mmhub/mmhub_3_0_1_offset.h (gmc_v11_0_set_mmhub_funcs: MMHUB 3.0.1 -> mmhub_v3_0_1): BASE_IDX 1
+constexpr uint32_t kMmhubFbLocationBase = 0x08ec, kMmhubFbLocationTop = 0x08ed, kMmhubFbOffset = 0x08d7;
+constexpr uint8_t kMmhubFbBaseIdx = 1;
+// nbio/nbio_7_7_0_offset.h (amdgpu_discovery.c: NBIO 7.7.0 and 7.7.1 -> nbio_v7_7_funcs, nbio_v7_7.c
+// nbio_v7_7_remap_hdp_registers): regBIF_BX0_REMAP_HDP_MEM_FLUSH_CNTL 0x012d, BASE_IDX 2
+constexpr uint32_t kNbioRemapHdpMemFlushCntl = 0x012d;
+constexpr uint8_t kNbioRemapBaseIdx = 2;
 
 bool same(const IpEntry &e, const IpVersion &v) {
     return e.major == v.major && e.minor == v.minor && e.revision == v.revision;
@@ -55,12 +62,12 @@ bool reg(const IpDiscoveryParser &disc, HwId hw, uint8_t seg, uint32_t off, uint
 } // namespace
 
 const ChipProfile *chip_profile(const IpDiscoveryParser &disc) {
-    IpEntry gc, mp0, mp1;
+    IpEntry gc, mp0, mp1, mmhub, nbif;
     if (!disc.is_valid() || !disc.find_ip(HwId::Gc, 0, gc) || !disc.find_ip(HwId::Mp0, 0, mp0) ||
-        !disc.find_ip(HwId::Mp1, 0, mp1))
+        !disc.find_ip(HwId::Mp1, 0, mp1) || !disc.find_ip(HwId::Mmhub, 0, mmhub) || !disc.find_ip(HwId::Nbif, 0, nbif))
         return nullptr;
     for (const ChipProfile &p : kProfiles)
-        if (same(gc, p.gc) && same(mp0, p.mp0) && same(mp1, p.mp1))
+        if (same(gc, p.gc) && same(mp0, p.mp0) && same(mp1, p.mp1) && same(mmhub, p.mmhub) && same(nbif, p.nbif))
             return &p;
     return nullptr;
 }
@@ -77,7 +84,11 @@ bool chip_regs(const IpDiscoveryParser &disc, const ChipProfile &prof, ChipRegs 
            reg(disc, HwId::Mp1, ss, kMp1C2pmsg66, r.smu_msg) &&
            reg(disc, HwId::Mp1, ss, kMp1C2pmsg82, r.smu_arg) &&
            reg(disc, HwId::Mp1, ss, kMp1C2pmsg90, r.smu_resp) &&
-           reg(disc, HwId::Gc, kGcGbAddrConfigBaseIdx, kGcGbAddrConfig, r.gb_addr_config);
+           reg(disc, HwId::Gc, kGcGbAddrConfigBaseIdx, kGcGbAddrConfig, r.gb_addr_config) &&
+           reg(disc, HwId::Mmhub, kMmhubFbBaseIdx, kMmhubFbLocationBase, r.mmhub_fb_location_base) &&
+           reg(disc, HwId::Mmhub, kMmhubFbBaseIdx, kMmhubFbLocationTop, r.mmhub_fb_location_top) &&
+           reg(disc, HwId::Mmhub, kMmhubFbBaseIdx, kMmhubFbOffset, r.mmhub_fb_offset) &&
+           reg(disc, HwId::Nbif, kNbioRemapBaseIdx, kNbioRemapHdpMemFlushCntl, r.nbio_remap_hdp_mem_flush_cntl);
 }
 
 bool fw_prefix(const IpDiscoveryParser &disc, HwId hw, char *out, size_t out_len) {

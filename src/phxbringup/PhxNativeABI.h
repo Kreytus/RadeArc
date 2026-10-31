@@ -49,8 +49,11 @@ enum {
                                       Copies the chunk into the VRAM fw_buf through BAR0 (no submit). */
     PHXN_SEL_DBG_PSP_LOADIPFW = 105, /* in: [0] fw_type [1] fw_buf byte offset [2] size; submits GFX_CMD_ID_LOAD_IP_FW
                                         out: [0] resp.status [1] fence us [2] resp fw_addr_lo [3] resp fw_addr_hi */
-    PHXN_SEL_DBG_PSP_CTL = 106,    /* in: [0] op (1 SETUP_TMR, 2 AUTOLOAD_RLC) [1] arg (TMR size for op 1)
-                                      out: [0] resp.status [1] fence us [2] resp dword@+8 [3] resp dword@+12 */
+    PHXN_SEL_DBG_PSP_CTL = 106,    /* in: [0] op (1 SETUP_TMR at 20 MiB, 2 AUTOLOAD_RLC, 3 LOAD_TOC of the TOC staged at
+                                      fw_buf 0, 4 SETUP_TMR at 128 MiB as Linux sets it) [1] arg (TMR size for ops 1/4, TOC
+                                      size for op 3)
+                                      out: [0] resp.status [1] fence us [2] resp dword@+8 (op 3: resp.tmr_size)
+                                      [3] resp dword@+12 (op 4: TMR size asked for, 1 MiB rounded) */
     PHXN_SEL_DBG_PSP_RAW = 107,    /* in: [0] cmd_id [1..6] six command-union dwords (at +28); submits it verbatim.
                                       out: [0] resp.status [1] fence us [2] resp dword@+8 [3] resp dword@+12
                                       For experimenting with SETUP_TMR / LOAD_TOC params. Addresses are built in
@@ -100,6 +103,7 @@ enum {
 #define PHX_PSP_GFX_CMD_SETUP_TMR    5u
 #define PHX_PSP_GFX_CMD_LOAD_IP_FW   6u
 #define PHX_PSP_GFX_CMD_AUTOLOAD_RLC 0x21u
+#define PHX_PSP_GFX_CMD_LOAD_TOC     0x20u   /* psp_gfx_if.h GFX_CMD_ID_LOAD_TOC */
 
 /* Fixed VRAM regions for firmware bring-up (absolute byte offsets, all within the 256 MiB BAR0 aperture, clear
  * of the console framebuffer [0,0xFA0000) and the ring/cmd/fence region near 17 MiB).
@@ -108,6 +112,8 @@ enum {
 #define PHX_VRAM_TMR_CAP    0x1000000ull   /* up to 16 MiB */
 #define PHX_VRAM_FWBUF_OFF  0x4000000ull   /* 64 MiB */
 #define PHX_VRAM_FWBUF_SIZE 0x1000000ull   /* 16 MiB */
+#define PHX_VRAM_TMR_TOC_OFF 0x8000000ull  /* 128 MiB: TMR of selector 106 op 4 (size from LOAD_TOC) */
+#define PHX_VRAM_TMR_TOC_CAP 0x10000000ull /* refuse more than 256 MiB */
 
 /* HDP flush (NBIF 7.7.0): NBIO base[2]=0xd20 + regBIF_BX0_REMAP_HDP_MEM_FLUSH_CNTL(0x12d) = dword 0xE4D; its value
  * is the BAR5 byte offset of the flush window (0x385c on this card). Writing 0 there drains the host data path. */

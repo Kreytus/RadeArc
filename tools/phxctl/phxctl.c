@@ -6,6 +6,8 @@
  *   phxctl smu <msg> [<arg>]              one SMU 13.0.4 message from the kext's allow-list (root, phxdebug=1)
  *   phxctl smuinfo                        TestMessage, PMFW / driver-if versions, enabled features
  *   phxctl psp status|create <off>|destroy  PSP 13.0.4 KM ring in the UMA carve-out at byte offset <off> (root, phxdebug=1)
+ *   phxctl toc <size>                     LOAD_TOC of the TOC staged at fw_buf 0; prints the TMR size the PSP asks for
+ *   phxctl tmrtoc <size>                  SETUP_TMR with that size, as Linux sets it up (VRAM 128 MiB)
  *
  * Absolute offsets = IP discovery segment base + Linux register offset (hardware/dumps/firebat_u6c/ip_discovery.txt):
  * GC segment 0 = 0x1260, segment 1 = 0xA000.
@@ -123,7 +125,7 @@ int main(int argc, char **argv)
 {
    if (argc < 2) {
       fprintf(stderr, "usage: phxctl regs <dword>... | gc | smu <msg> [arg] | smuinfo | "
-                      "psp status|create <off>|destroy | vram <off> [count]\n");
+                      "psp status|create <off>|destroy | vram <off> [count] | toc <size> | tmrtoc <size> | ...\n");
       return 2;
    }
    if (open_kext())
@@ -185,6 +187,20 @@ int main(int argc, char **argv)
       uint32_t n = 4;
       kern_return_t kr = IOConnectCallScalarMethod(conn, SEL_DBG_PSP_CTL, in, 2, out, &n);
       printf("tmr (size 0x%llx) -> kr 0x%08x  status 0x%08x  %llu us\n", (unsigned long long)in[1], kr,
+             (uint32_t)out[0], (unsigned long long)out[1]);
+   } else if (!strcmp(argv[1], "toc") && argc >= 3) {
+      // LOAD_TOC of the TOC staged at fw_buf 0 (phxctl stage), prints the TMR size the PSP asks for
+      uint64_t in[2] = {3, strtoull(argv[2], NULL, 0)}, out[4] = {0, 0, 0, 0};
+      uint32_t n = 4;
+      kern_return_t kr = IOConnectCallScalarMethod(conn, SEL_DBG_PSP_CTL, in, 2, out, &n);
+      printf("toc (size 0x%llx) -> kr 0x%08x  status 0x%08x  %llu us  tmr_size 0x%llx\n", (unsigned long long)in[1], kr,
+             (uint32_t)out[0], (unsigned long long)out[1], (unsigned long long)out[2]);
+   } else if (!strcmp(argv[1], "tmrtoc") && argc >= 3) {
+      // SETUP_TMR as Linux does it (size from `toc`, at VRAM 128 MiB, real system physical address)
+      uint64_t in[2] = {4, strtoull(argv[2], NULL, 0)}, out[4] = {0, 0, 0, 0};
+      uint32_t n = 4;
+      kern_return_t kr = IOConnectCallScalarMethod(conn, SEL_DBG_PSP_CTL, in, 2, out, &n);
+      printf("tmrtoc (size 0x%llx) -> kr 0x%08x  status 0x%08x  %llu us\n", (unsigned long long)out[3], kr,
              (uint32_t)out[0], (unsigned long long)out[1]);
    } else if (!strcmp(argv[1], "autoload")) {
       uint64_t in[2] = {2, 0}, out[4] = {0, 0, 0, 0};

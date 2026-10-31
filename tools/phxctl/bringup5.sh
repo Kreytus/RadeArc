@@ -9,7 +9,8 @@ SUDO=""; [ "$(id -u)" = 0 ] || SUDO=sudo
 P(){ $SUDO ~/gpu/phxctl/phxctl "$@"; }
 # the plan first: an unknown chip or a missing/malformed firmware file loads nothing
 PLAN=$(~/gpu/phxctl/phxfw ~/gpu/fw) || { echo "== no firmware plan (see phxfw above): nothing loaded"; exit 1; }
-echo "== $(grep '^CHIP ' <<<"$PLAN")"
+read -r _ CHIP _ <<<"$(grep '^CHIP ' <<<"$PLAN")"
+echo "== chip $CHIP: $(grep '^CHIP ' <<<"$PLAN" | cut -d' ' -f3-)"
 read -r _ TOCF TOCOFF TOCLEN <<<"$(grep '^TOC ' <<<"$PLAN")"
 echo "== watchdog: reboot in 3 min unless cancelled =="
 $SUDO bash -c 'nohup shutdown -r +3 >/dev/null 2>&1 &'
@@ -19,9 +20,20 @@ P psp destroy >/dev/null 2>&1
 # bring-up is not enabled, e.g. Phoenix 2 for now)
 P psp create 0x1100000 | grep -q 'kr 0x00000000' || stop "PSP ring not created"
 P stage "$TOCF" "$TOCOFF" "$TOCLEN" 0x0 >/dev/null
-# TODO(1.5): LOAD_TOC/SETUP_TMR MC and system addresses are still the 780M's; TMR size to come from the LOAD_TOC reply
-P raw 0x20 0x04000000 0x80 "$(printf '0x%x' "$TOCLEN")" 0 0 0 >/dev/null
-P raw 0x5 0x08000000 0x80 0x4000000 0x2 0x0C000000 0x6A >/dev/null
+if [ "$CHIP" = phoenix ]; then
+    # the 780M: exactly the LOAD_TOC and SETUP_TMR upstream ran (raw commands, 64 MiB TMR at VRAM 128 MiB)
+    P raw 0x20 0x04000000 0x80 "$(printf '0x%x' "$TOCLEN")" 0 0 0 >/dev/null
+    P raw 0x5 0x08000000 0x80 0x4000000 0x2 0x0C000000 0x6A >/dev/null
+else
+    # as Linux (amdgpu_psp.c psp_tmr_init / psp_load_toc / psp_prep_tmr_cmd_buf): LOAD_TOC gives the TMR size, SETUP_TMR
+    # gets that size with the TMR's MC and real system addresses (the kext computes both from the FB layout)
+    OUT=$(P toc "$TOCLEN"); echo "$OUT"
+    grep -q 'kr 0x00000000  status 0x00000000' <<<"$OUT" || stop "LOAD_TOC failed"
+    TMR=$(sed -n 's/.*tmr_size \(0x[0-9a-f]*\).*/\1/p' <<<"$OUT")
+    [ -n "$TMR" ] && [ "$((TMR))" -gt 0 ] || stop "LOAD_TOC returned no TMR size"
+    OUT=$(P tmrtoc "$TMR"); echo "$OUT"
+    grep -q 'kr 0x00000000  status 0x00000000' <<<"$OUT" || stop "SETUP_TMR failed"
+fi
 echo "== load firmware =="
 L(){ P loadfw "$@" 2>&1 | grep loadfw >> ~/gpu/fwaddr.log; }
 : > ~/gpu/fwaddr.log

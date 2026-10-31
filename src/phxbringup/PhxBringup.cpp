@@ -24,7 +24,7 @@
 #include "PhxNativeABI.h"
 #include "rdna3_chip_profile.h"
 
-#define PHX_KEXT_BUILD 33u
+#define PHX_KEXT_BUILD 34u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -1208,6 +1208,42 @@ IOReturn PhxBringup::pspCtl(uint32_t op, uint32_t arg, uint64_t out[4]) {
             tmrSetUp = true;
     } else if (op == 2) {
         r = pspRunCmd(PHX_PSP_GFX_CMD_AUTOLOAD_RLC, nullptr, 0, out);
+    } else if (op == 3) {
+        // LOAD_TOC (amdgpu_psp.c psp_load_toc, psp_prep_load_toc_cmd_buf): the TOC staged at fw_buf offset 0 (selector
+        // 104), arg = its size. out[2] = resp.tmr_size (psp_gfx_if.h psp_gfx_resp +16): the TMR this chip's firmware
+        // needs (psp_tmr_init uses it instead of PSP_TMR_SIZE).
+        if (!arg || arg > fwBufSize) {
+            r = kIOReturnBadArgument;
+        } else {
+            uint32_t u[3] = {static_cast<uint32_t>(fwBufMc), static_cast<uint32_t>(fwBufMc >> 32), arg};
+            r = pspRunCmd(PHX_PSP_GFX_CMD_LOAD_TOC, u, 3, out);
+            if (r == kIOReturnSuccess && out[0] != 0xFFFFFFFFu) {
+                volatile uint32_t *cmd = reinterpret_cast<volatile uint32_t *>(fbAper->getVirtualAddress() + cmdOff);
+                out[2] = cmd[(PHX_PSP_GFX_RESP_OFFSET + 16) / 4];
+            }
+        }
+    } else if (op == 4) {
+        // SETUP_TMR the way Linux sets it up: size from LOAD_TOC rounded to PSP_TMR_ALIGNMENT (1 MiB, amdgpu_psp.h;
+        // psp_tmr_init); psp_prep_tmr_cmd_buf: TMR MC address, size, virt_phy_addr = 1, and the TMR's system physical
+        // address (amdgpu_gmc_vram_pa = fbPhys + offset on this UMA part). The TMR sits at 128 MiB of VRAM, where
+        // bringup5.sh puts the 780M's, clear of the firmware framebuffer at 0 and of the ring, fw_buf, GART and queue
+        // regions below 80 MiB. Op 1 and the 780M's raw command are unchanged.
+        const uint64_t size = (static_cast<uint64_t>(arg) + 0xFFFFFull) & ~0xFFFFFull;
+        if (!arg || size > PHX_VRAM_TMR_TOC_CAP || PHX_VRAM_TMR_TOC_OFF + size > fbSize) {
+            r = kIOReturnBadArgument;
+        } else {
+            const uint64_t mc = fbMcBase + PHX_VRAM_TMR_TOC_OFF, pa = fbPhys + PHX_VRAM_TMR_TOC_OFF;
+            uint32_t u[6] = {static_cast<uint32_t>(mc), static_cast<uint32_t>(mc >> 32), static_cast<uint32_t>(size),
+                             0x2u, static_cast<uint32_t>(pa), static_cast<uint32_t>(pa >> 32)};
+            r = pspRunCmd(PHX_PSP_GFX_CMD_SETUP_TMR, u, 6, out);
+            if (r == kIOReturnSuccess && out[0] == 0) {
+                tmrOff = PHX_VRAM_TMR_TOC_OFF;
+                tmrMc = mc;
+                tmrSize = size;
+                tmrSetUp = true;
+            }
+            out[3] = size;   // what was asked for (after rounding)
+        }
     } else {
         r = kIOReturnBadArgument;
     }

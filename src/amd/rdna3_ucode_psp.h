@@ -177,6 +177,31 @@ struct imu_firmware_header_v1_0 {
 } __attribute__((packed));
 static_assert(sizeof(imu_firmware_header_v1_0) == 48, "imu_firmware_header_v1_0 must be 48 bytes");
 
+// ---- F32 CP firmware header (v1.0), Linux amdgpu_ucode.h struct gfx_firmware_header_v1_0 ----------------
+struct gfx_firmware_header_v1_0 {
+    common_firmware_header header;
+    uint32_t ucode_feature_version;
+    uint32_t jt_offset;   // jump table location, dwords from the payload start
+    uint32_t jt_size;     // jump table size in dwords
+} __attribute__((packed));
+static_assert(sizeof(gfx_firmware_header_v1_0) == 44, "gfx_firmware_header_v1_0 must be 44 bytes");
+
+// ---- MES firmware header (v1.0), Linux amdgpu_ucode.h struct mes_firmware_header_v1_0 -----------------
+struct mes_firmware_header_v1_0 {
+    common_firmware_header header;
+    uint32_t mes_ucode_version;
+    uint32_t mes_ucode_size_bytes;
+    uint32_t mes_ucode_offset_bytes;
+    uint32_t mes_ucode_data_version;
+    uint32_t mes_ucode_data_size_bytes;
+    uint32_t mes_ucode_data_offset_bytes;
+    uint32_t mes_uc_start_addr_lo;
+    uint32_t mes_uc_start_addr_hi;
+    uint32_t mes_data_start_addr_lo;
+    uint32_t mes_data_start_addr_hi;
+} __attribute__((packed));
+static_assert(sizeof(mes_firmware_header_v1_0) == 72, "mes_firmware_header_v1_0 must be 72 bytes");
+
 // ---- DMCUB firmware header (v1.0) ----------------------------------------
 struct dmcub_firmware_header_v1_0 {
     common_firmware_header header;

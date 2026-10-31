@@ -83,7 +83,10 @@ static void check_cp_file(const char *name, uint64_t host_type, PSPGfxFwType leg
     assert(count == 1);
     assert(out[0].fw_type == static_cast<uint32_t>(legacy_type));
     assert(out[0].offset_bytes == common->ucode_array_offset_bytes);
-    assert(out[0].size_bytes == common->ucode_size_bytes);
+    // MEC without its jump table (amdgpu_ucode_init_single_fw CP_MEC1: ucode_size_bytes - jt_size * 4)
+    const uint32_t jt = legacy_type == PSPGfxFwType::CP_MEC
+                            ? reinterpret_cast<const gfx_firmware_header_v1_0 *>(bin.data())->jt_size * 4 : 0;
+    assert(out[0].size_bytes == common->ucode_size_bytes - jt);
     assert(static_cast<uint64_t>(out[0].offset_bytes) + out[0].size_bytes <= bin.size());
 }
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Download the Phoenix (Radeon 780M) firmware blobs used by tests/test_rdna3_ucode.cpp
+# Download the Phoenix (Radeon 780M, gc_11_0_1) and Phoenix 2 (Radeon 740M, gc_11_0_4) firmware blobs used by
+# tests/test_rdna3_ucode.cpp and tests/test_rdna3_fw_plan.cpp
 # from upstream linux-firmware. These files are redistributable under AMD's
 # LICENSE.amdgpu but are not committed to this repository.
 set -euo pipefail
@@ -20,6 +21,17 @@ FILES=(
   gc_11_0_1_me.bin
   gc_11_0_1_mec.bin
   gc_11_0_1_imu.bin
+  gc_11_0_1_mes_2.bin
+  gc_11_0_1_mes1.bin
+  psp_13_0_4_toc.bin
+  gc_11_0_4_pfp.bin
+  gc_11_0_4_me.bin
+  gc_11_0_4_mec.bin
+  gc_11_0_4_rlc.bin
+  gc_11_0_4_imu.bin
+  gc_11_0_4_mes_2.bin
+  gc_11_0_4_mes1.bin
+  psp_13_0_11_toc.bin
   sdma_6_0_1.bin
   dcn_3_1_4_dmcub.bin
 )

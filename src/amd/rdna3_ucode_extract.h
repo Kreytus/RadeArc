@@ -27,6 +27,7 @@ constexpr uint64_t kHostFwFile_CP_ME   = 0x200 + 5;
 constexpr uint64_t kHostFwFile_CP_MEC  = 0x200 + 6;
 constexpr uint64_t kHostFwFile_DMCUB   = 0x200 + 7;
 constexpr uint64_t kHostFwFile_PSP_TA  = 0x200 + 8;
+constexpr uint64_t kHostFwFile_MES_KIQ = 0x200 + 9;   // <gc>_mes1.bin; kHostFwFile_MES is the scheduler, <gc>_mes_2.bin
 
 // Extracts payload entries from raw firmware binary.
 // Returns count of payloads written to out[] (0 on invalid / corrupted file).

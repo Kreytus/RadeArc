@@ -137,6 +137,21 @@ uint32_t extract_rlc(const uint8_t *bin, uint64_t size, UcodePayload out[]) {
     return n;
 }
 
+// MES extractor: ucode + data of one MES pipe (amdgpu_ucode.c amdgpu_ucode_init_single_fw, CP_MES / CP_MES_DATA and
+// CP_MES1 / CP_MES1_DATA from mes_firmware_header_v1_0; amdgpu_psp.c psp_get_fw_type: scheduler pipe -> GFX_FW_TYPE_CP_MES
+// + MES_STACK, KIQ pipe -> CP_MES_KIQ + MES_KIQ_STACK).
+uint32_t extract_mes(const uint8_t *bin, uint64_t size, bool kiq, UcodePayload out[]) {
+    if (size < sizeof(mes_firmware_header_v1_0)) return 0;
+    auto *hdr = reinterpret_cast<const mes_firmware_header_v1_0 *>(bin);
+    if (hdr->header.header_version_major != 1) return 0;
+    uint32_t n = 0;
+    n = push(out, n, static_cast<uint32_t>(kiq ? PSPGfxFwType::CP_MES_KIQ : PSPGfxFwType::CP_MES),
+             hdr->mes_ucode_offset_bytes, hdr->mes_ucode_size_bytes, size);
+    n = push(out, n, static_cast<uint32_t>(kiq ? PSPGfxFwType::MES_KIQ_STACK : PSPGfxFwType::MES_STACK),
+             hdr->mes_ucode_data_offset_bytes, hdr->mes_ucode_data_size_bytes, size);
+    return n == 2 ? n : 0;
+}
+
 // IMU extractor (IMU_I + IMU_D).
 uint32_t extract_imu(const uint8_t *bin, uint64_t size, UcodePayload out[]) {
     if (size < sizeof(imu_firmware_header_v1_0)) return 0;
@@ -169,19 +184,29 @@ uint32_t extract_cp_rs64(const uint8_t *bin, uint64_t size,
     if (size < sizeof(common_firmware_header)) return 0;
     auto *common = reinterpret_cast<const common_firmware_header *>(bin);
 
-    // Header v1.x: legacy F32 CP microcode, as shipped for Phoenix (GC 11.0.1)
+    // Header v1.x: legacy F32 CP microcode, as shipped for Phoenix (GC 11.0.1) and Phoenix 2 (GC 11.0.4)
     // in linux-firmware. One payload, loaded by PSP as CP_PFP / CP_ME / CP_MEC
-    // (gfx_v11_0 with rs64_enable == false; no stacks and no MEC jump tables).
+    // (gfx_v11_0 with rs64_enable == false; no stacks). MEC leaves out its jump table, as Linux does:
+    // amdgpu_ucode.c amdgpu_ucode_init_single_fw, CP_MEC1: ucode_size_bytes - jt_size * 4; the separate
+    // CP_MEC1_JT payload is skipped with RLC autoload (amdgpu_psp.c psp_skip_fw).
     if (common->header_version_major == 1) {
         uint32_t legacy_type = 0;
+        uint64_t payload = common->ucode_size_bytes;
         switch (family) {
         case RS64Family::PFP: legacy_type = static_cast<uint32_t>(PSPGfxFwType::CP_PFP); break;
         case RS64Family::ME:  legacy_type = static_cast<uint32_t>(PSPGfxFwType::CP_ME);  break;
-        case RS64Family::MEC: legacy_type = static_cast<uint32_t>(PSPGfxFwType::CP_MEC); break;
+        case RS64Family::MEC: {
+            legacy_type = static_cast<uint32_t>(PSPGfxFwType::CP_MEC);
+            if (size < sizeof(gfx_firmware_header_v1_0)) return 0;
+            const uint64_t jt = static_cast<uint64_t>(reinterpret_cast<const gfx_firmware_header_v1_0 *>(bin)->jt_size) * 4;
+            if (jt >= payload) return 0;
+            payload -= jt;
+            break;
+        }
         }
         return push(out, 0, legacy_type,
                     common->ucode_array_offset_bytes,
-                    common->ucode_size_bytes, size);
+                    payload, size);
     }
 
     // Header v2.x: RS64 CP microcode (Navi 3x) with per-pipe stacks.
@@ -291,6 +316,10 @@ uint32_t rdna3_ucode_extract(uint64_t hostFwType,
         return extract_rlc(bin, size_bytes, out);
     case kHostFwFile_IMU:
         return extract_imu(bin, size_bytes, out);
+    case kHostFwFile_MES:
+        return extract_mes(bin, size_bytes, false, out);
+    case kHostFwFile_MES_KIQ:
+        return extract_mes(bin, size_bytes, true, out);
     case kHostFwFile_CP_PFP:
         return extract_cp_rs64(bin, size_bytes, RS64Family::PFP, out);
     case kHostFwFile_CP_ME:

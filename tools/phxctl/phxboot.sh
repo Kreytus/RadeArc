@@ -50,7 +50,11 @@ ioreg -l | grep -q '"phx-build"' || { [ $M2 = 1 ] && m2_fail "PhxBringup not loa
 echo "PhxAMDFB on the panel: $M2"
 touch "$MARK"; sync
 apps_only
-MC=1 CS=1 ADOPT=1 GFX=1 AG=1 bash $G/full.sh kiqsched | grep -E "^compute:|^gfx:|adopt"
+MC=1 CS=1 ADOPT=1 GFX=1 AG=1 bash $G/full.sh kiqsched | grep -E "^compute:|^gfx:|adopt|failed"
+if [ "${PIPESTATUS[0]}" != 0 ]; then   # no firmware plan, or bring-up stopped: do not claim the GPU
+    [ $M2 = 1 ] && m2_fail "GPU bring-up failed"
+    echo "GPU bring-up failed: the firmware framebuffer stays"; release; rm -f "$MARK"; exit 0
+fi
 $G/phxctl/mesboot claim
 # no BO cache flushing per submit/wait (the GPU maps system memory snooped): 41 fps window drag instead of 13, and no
 # artifacts seen (2026-10-20)

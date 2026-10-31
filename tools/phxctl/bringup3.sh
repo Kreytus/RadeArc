@@ -1,3 +1,4 @@
+# OLD EXPERIMENT, Phoenix 1 (gc_11_0_1) only, hardcoded offsets: use bringup5.sh (firmware plan from phxfw).
 SUDO_CMD="sudo"
 if [ -n "$SUDO_PASS" ]; then
     SUDO_CMD="echo '$SUDO_PASS' | sudo -S -p ''"

@@ -8,8 +8,11 @@ V=$1; R=$(cd "$2" && pwd); OUT=${3:-$PWD}
 H=/System/Library/CoreServices/CoreTypes.bundle/Contents/Library/PhxGPU
 G=/Users/Shared/gpu
 P=$OUT/nullarc-$V
+# Phoenix (780M/760M, gc_11_0_1 + psp_13_0_4) and Phoenix 2 (740M, gc_11_0_4 + psp_13_0_11); phxfw picks by IP version
 FW="psp_13_0_4_toc.bin gc_11_0_1_pfp.bin gc_11_0_1_me.bin gc_11_0_1_mec.bin gc_11_0_1_mes_2.bin gc_11_0_1_mes1.bin
-    gc_11_0_1_imu.bin gc_11_0_1_rlc.bin sdma_6_0_1.bin"
+    gc_11_0_1_imu.bin gc_11_0_1_rlc.bin sdma_6_0_1.bin
+    psp_13_0_11_toc.bin gc_11_0_4_pfp.bin gc_11_0_4_me.bin gc_11_0_4_mec.bin gc_11_0_4_mes_2.bin gc_11_0_4_mes1.bin
+    gc_11_0_4_imu.bin gc_11_0_4_rlc.bin"
 
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 rm -rf "$P"; mkdir -p "$P"/{EFI/OC/Kexts,Library/Extensions,PhxGPU/nvmtl,gpu/phxctl,gpu/fw,extras/firebat-u6c}
@@ -36,7 +39,7 @@ ln -s "$L" "$P/PhxGPU/nvmtl/libvulkan.1.dylib"; ln -s libvulkan.1.dylib "$P/PhxG
 
 # boot-time bring-up: scripts from the repository, tools built on the Mac, the firmware the scripts are written for
 for f in phxboot.sh full.sh bringup5.sh kinst.sh local.phxboot.plist; do cp "$R/tools/phxctl/$f" "$P/gpu/"; done
-cp "$G/phxctl/phxctl" "$G/phxctl/mesboot" "$P/gpu/phxctl/"
+cp "$G/phxctl/phxctl" "$G/phxctl/mesboot" "$G/phxctl/phxfw" "$P/gpu/phxctl/"
 for f in $FW; do cp "$G/fw/$f" "$P/gpu/fw/"; done
 
 cp "$R/install/install.sh" "$R/install/uninstall.sh" "$P/"

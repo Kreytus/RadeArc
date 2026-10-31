@@ -48,7 +48,8 @@ else fail "PhxBringup.kext is not loaded: add EFI/OC/Kexts/PhxBringup.kext to Op
 if grep -qE '"compatible" = <[^>]*"pci1002,(15bf|15c8|1900|1901)"' <<<"$IOR"; then say "  ✓ Radeon 780M/760M found"
 else say "  ! no Radeon 780M/760M (1002:15bf/15c8/1900/1901) found: other GPUs are not supported"; fi
 for f in EFI/OC/Kexts/PhxBringup.kext Library/Extensions/PhxAccel.kext PhxGPU/NVMTLDriver.bundle PhxGPU/nvmtl/libvulkan_radeon.dylib \
-         gpu/phxboot.sh gpu/full.sh gpu/bringup5.sh gpu/kinst.sh gpu/phxctl/phxctl gpu/phxctl/mesboot gpu/local.phxboot.plist; do
+         gpu/phxboot.sh gpu/full.sh gpu/bringup5.sh gpu/kinst.sh gpu/phxctl/phxctl gpu/phxctl/mesboot gpu/phxctl/phxfw \
+         gpu/local.phxboot.plist; do
     [ -e "$SRC/$f" ] || fail "package file $f is missing"
 done
 [ "$(ls "$SRC"/gpu/fw/*.bin 2>/dev/null | wc -l)" -ge 9 ] || fail "package firmware gpu/fw is incomplete"
@@ -58,7 +59,7 @@ done
 say "== GPU bring-up -> $G"
 mkdir -p "$G/phxctl" "$G/fw" "$G/backup"
 for f in phxboot.sh full.sh bringup5.sh kinst.sh; do install -m 755 "$SRC/gpu/$f" "$G/$f"; done
-install -m 755 "$SRC/gpu/phxctl/phxctl" "$SRC/gpu/phxctl/mesboot" "$G/phxctl/"
+install -m 755 "$SRC/gpu/phxctl/phxctl" "$SRC/gpu/phxctl/mesboot" "$SRC/gpu/phxctl/phxfw" "$G/phxctl/"
 install -m 644 "$SRC"/gpu/fw/*.bin "$G/fw/"
 chown -R root:wheel "$G"
 rm -f "$G/phxboot-off" /var/db/phxboot.pending

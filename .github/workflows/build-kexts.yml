@@ -5,7 +5,7 @@ name: Build kexts
 on:
   push:
     branches: [ "main" ]
-    paths: [ "src/**", ".github/workflows/build-kexts.yml" ]
+    paths: [ "src/**", "tools/phxctl/**", ".github/workflows/build-kexts.yml" ]
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,15 @@ jobs:
     - name: Build PhxAccel.kext
       run: sh src/phxaccel/build.sh "$RUNNER_TEMP/MacKernelSDK"
 
+    - name: Build the bring-up tools (phxctl, mesboot, phxfw)
+      working-directory: tools/phxctl
+      run: |
+        clang -arch x86_64 -O2 -o phxctl phxctl.c -framework IOKit -framework CoreFoundation
+        clang -arch x86_64 -O2 -o mesboot mesboot.c -framework IOKit -framework CoreFoundation
+        clang++ -arch x86_64 -std=c++17 -O2 -Wall -Wextra -Werror -I../../src/amd -o phxfw phxfw.cpp \
+          ../../src/amd/rdna3_ip_discovery.cpp ../../src/amd/rdna3_chip_profile.cpp \
+          ../../src/amd/rdna3_ucode_extract.cpp ../../src/amd/rdna3_fw_plan.cpp -framework IOKit -framework CoreFoundation
+
     - name: Check the binaries
       run: |
         for k in src/phxbringup/build/PhxBringup.kext src/phxaccel/build/PhxAccel.kext; do
@@ -34,12 +43,14 @@ jobs:
           plutil -lint "$k/Contents/Info.plist"
         done
         echo "PhxBringup build: $(grep -o 'PHX_KEXT_BUILD [0-9]*' src/phxbringup/PhxBringup.cpp)"
+        for t in phxctl mesboot phxfw; do file tools/phxctl/$t; done
 
     - name: Package
       run: |
         mkdir -p out
         ditto src/phxbringup/build/PhxBringup.kext out/PhxBringup.kext
         ditto src/phxaccel/build/PhxAccel.kext out/PhxAccel.kext
+        mkdir -p out/phxctl && cp tools/phxctl/phxctl tools/phxctl/mesboot tools/phxctl/phxfw out/phxctl/
         echo "commit ${GITHUB_SHA}" > out/BUILD.txt
 
     - uses: actions/upload-artifact@v4

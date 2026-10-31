@@ -8,6 +8,7 @@ TEST_BIN_DIR = build/tests
 TESTS = $(TEST_BIN_DIR)/test_rdna3_discovery_uma \
         $(TEST_BIN_DIR)/test_rdna3_ip_dcn \
         $(TEST_BIN_DIR)/test_rdna3_ucode \
+        $(TEST_BIN_DIR)/test_rdna3_chip_profile \
         $(TEST_BIN_DIR)/test_r3n_abi
 
 .PHONY: all test clean kext fixtures
@@ -24,6 +25,9 @@ $(TEST_BIN_DIR)/test_rdna3_ip_dcn: src/amd/rdna3_ip_blocks.cpp src/amd/rdna3_dcn
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@
 
 $(TEST_BIN_DIR)/test_rdna3_ucode: src/amd/rdna3_ucode_extract.cpp tests/test_rdna3_ucode.cpp | $(TEST_BIN_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@
+
+$(TEST_BIN_DIR)/test_rdna3_chip_profile: src/amd/rdna3_ip_discovery.cpp src/amd/rdna3_chip_profile.cpp tests/test_rdna3_chip_profile.cpp | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@
 
 $(TEST_BIN_DIR)/test_r3n_abi: src/uapi/r3n_user_client.cpp src/winsys/radv_r3n_winsys.cpp tests/test_r3n_abi.cpp | $(TEST_BIN_DIR)

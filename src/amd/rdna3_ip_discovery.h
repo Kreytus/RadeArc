@@ -12,6 +12,7 @@ namespace rdna3 {
 enum class HwId : uint16_t {
     Mp1     = 1,    // SMU / Power management
     Gc      = 11,   // Graphics & Compute (GFX11 / RDNA 3)
+    Vcn     = 12,   // UVD_HWID: VCN video codec
     Mmhub   = 34,   // Memory management hub
     Osssys  = 40,   // IH / OS system
     Hdp     = 41,   // Host Data Path

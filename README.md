@@ -11,9 +11,11 @@ licences in `LICENSE`, `LICENSES/` and `THIRD_PARTY_NOTICES.md` apply unchanged)
 | [docs/PORTING_AUDIT.md](docs/PORTING_AUDIT.md) | every Phoenix 1 / 780M / eDP assumption in upstream, with the Linux amdgpu references |
 | [docs/PHOENIX2_FACTS.md](docs/PHOENIX2_FACTS.md) | what the 8500G reported (IP versions and bases, CU config, firmware, the GOP display pipe) |
 | [docs/PHASE0.md](docs/PHASE0.md), [tools/phase0](tools/phase0) | how those facts were collected |
+| [docs/TEST_PHOENIX2.md](docs/TEST_PHOENIX2.md) | the first hardware test on the 8500G (recognition, power-up, MES), step by step |
 
-**Status:** Phase 1 (PhxBringup on Phoenix 2) in progress. Nothing here brings a Phoenix 2 GPU up yet: do not install it
-on the 8500G.
+**Status:** Phase 1 (PhxBringup on Phoenix 2) code complete, untested on hardware. Phoenix 2 bring-up is opt-in
+(boot-arg `-phxp2`); follow docs/TEST_PHOENIX2.md, and do not run `install.sh` on the 8500G yet. Kexts and tools are
+built by GitHub Actions (Actions → Build kexts → artifact "kexts").
 
 ---
 

@@ -1,6 +1,7 @@
 // mesboot: Phoenix (GC 11.0.1) GART + MES bring-up experiments, driven through PhxBringup debug selectors.
 // build: clang -O2 -o mesboot mesboot.c -framework IOKit -framework CoreFoundation ; run as root (phxdebug=1)
 #include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,0 +1,49 @@
+name: Build kexts
+
+# Builds PhxBringup.kext (OpenCore EFI/OC/Kexts) and PhxAccel.kext (Auxiliary KC) on a GitHub macOS runner, so no Mac
+# is needed to get them. Download them from the run's "kexts" artifact (Actions tab -> the run -> Artifacts).
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "src/**", ".github/workflows/build-kexts.yml" ]
+  workflow_dispatch:
+
+jobs:
+  kexts:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: MacKernelSDK (pinned)
+      run: |
+        git clone https://github.com/acidanthera/MacKernelSDK "$RUNNER_TEMP/MacKernelSDK"
+        git -C "$RUNNER_TEMP/MacKernelSDK" checkout 3f750085caa17ec3a7880f11c11bf4f48cd6a164
+
+    - name: Build PhxBringup.kext
+      run: sh src/phxbringup/build.sh "$RUNNER_TEMP/MacKernelSDK"
+
+    - name: Build PhxAccel.kext
+      run: sh src/phxaccel/build.sh "$RUNNER_TEMP/MacKernelSDK"
+
+    - name: Check the binaries
+      run: |
+        for k in src/phxbringup/build/PhxBringup.kext src/phxaccel/build/PhxAccel.kext; do
+          b="$k/Contents/MacOS/$(basename "$k" .kext)"
+          file "$b"
+          file "$b" | grep -q 'x86_64' || { echo "::error::$b is not an x86_64 binary"; exit 1; }
+          plutil -lint "$k/Contents/Info.plist"
+        done
+        echo "PhxBringup build: $(grep -o 'PHX_KEXT_BUILD [0-9]*' src/phxbringup/PhxBringup.cpp)"
+
+    - name: Package
+      run: |
+        mkdir -p out
+        ditto src/phxbringup/build/PhxBringup.kext out/PhxBringup.kext
+        ditto src/phxaccel/build/PhxAccel.kext out/PhxAccel.kext
+        echo "commit ${GITHUB_SHA}" > out/BUILD.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: kexts
+        path: out/
+        retention-days: 30

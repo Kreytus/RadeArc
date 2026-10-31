@@ -87,8 +87,10 @@ Background neural-network work (Photos analysis `mediaanalysisd`, `photoanalysis
 its convolution kernels hung the GPU in testing. It runs on the CPU as before.
 
 To turn the GPU off by hand: `sudo touch /Users/Shared/gpu/phxboot-off` and reboot. To turn it on again:
-`sudo rm /Users/Shared/gpu/phxboot-off` and reboot. If macOS no longer boots, start without PhxBringup: disable it in
-OpenCore (or use your EFI copy), boot, and run the uninstaller.
+`sudo rm /Users/Shared/gpu/phxboot-off` and reboot. If macOS no longer boots, add the boot-arg **`-phxoff`** for
+one boot (OpenCore picker: Space → the macOS entry with a boot-arg editor, or `boot-args` in config.plist): PhxBringup,
+PhxAMDFB and NMXAccel then stay off and phxboot does nothing, so macOS runs on the firmware framebuffer. You can also
+disable PhxBringup in OpenCore (or use your EFI copy). Then run the uninstaller.
 
 ## Updating
 

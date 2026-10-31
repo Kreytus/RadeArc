@@ -5,7 +5,8 @@
 # composites on the 780M from its first start. Fail-safes: a boot whose previous attempt never finished skips everything,
 # turns itself off and leaves PhxAMDFB off (the marker survives a hang); WindowServer crashing 3 times in 90 s is taken
 # off the GPU; NVRAM phxfb-boot is armed again only after a good M2 boot and only while $G/phxboot-m2 exists.
-# Kill switch: the file $G/phxboot-off.
+# Kill switches: the boot-arg -phxoff (the whole driver: PhxBringup, PhxAMDFB and NMXAccel stay off too), the file
+# $G/phxboot-off.
 G=/Users/Shared/gpu; export HOME=/Users/Shared
 LOG=/var/log/phxboot.log; MARK=/var/db/phxboot.pending; OFF=$G/phxboot-off
 ALLOW=/Library/GPUBundles/nvmtl-allow.txt; DR=/Library/Logs/DiagnosticReports
@@ -32,6 +33,9 @@ m2_fail() {
 # PhxAMDFB comes from the Aux KC, which loads well after PhxBringup: wait for the panel's framebuffer (PhxAMDFB, or
 # IONDRV when PhxAMDFB was not armed) before telling which one took it
 wait_fb() { for i in $(seq 1 90); do ioreg -rc IOFramebuffer -d0 | grep -q 'class ' && break; sleep 1; done; }
+case " $(sysctl -n kern.bootargs 2>/dev/null) " in
+    *" -phxoff "*) echo "boot-arg -phxoff: nothing to do"; release; exit 0 ;;
+esac
 if [ -e "$OFF" ]; then echo "kill switch present: nothing to do"; release; exit 0; fi
 if [ -e "$MARK" ]; then
     echo "previous attempt did not finish: phxboot and PhxAMDFB off"

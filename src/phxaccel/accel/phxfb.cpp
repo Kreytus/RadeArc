@@ -461,6 +461,7 @@ bool PhxAMDFB::start(IOService *provider)
 {
     char arg[8];
     if (PE_parse_boot_argn("-phxfboff", arg, sizeof arg)) { PFBLOG("-phxfboff: leaving the firmware framebuffer"); return false; }
+    if (PE_parse_boot_argn("-phxoff", arg, sizeof arg)) { PFBLOG("-phxoff: leaving the firmware framebuffer"); return false; }
     if (!takeBootArming()) { PFBLOG("NVRAM phxfb-boot not set: leaving the firmware framebuffer this boot"); return false; }
     fPCI = OSDynamicCast(IOPCIDevice, provider);
     if (!fPCI) return false;

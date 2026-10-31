@@ -37,6 +37,8 @@ static inline bool nvrm_driver_off(void)
         return true;
     if (PE_parse_boot_argn("-phxacceloff", arg, sizeof arg))   // PhxAccel kill switch
         return true;
+    if (PE_parse_boot_argn("-phxoff", arg, sizeof arg))        // everything off: PhxBringup, PhxAMDFB, NMXAccel, phxboot
+        return true;
     IORegistryEntry *options = IORegistryEntry::fromPath("/options", gIODTPlane);
     if (!options)
         return false;  // NVRAM not published yet: the boot-arg alone decides, as before

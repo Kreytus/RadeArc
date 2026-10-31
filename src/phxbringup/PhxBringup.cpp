@@ -8,7 +8,7 @@
 //  GPU VA mappings are bookkeeping only, and Submit retires at once without touching the GPU.
 //  E1 proves the IOKit transport end to end; E3/E4 put the GPU behind the same calls.
 //
-//  Boot-arg -phxbringupoff disables it. ReadRegs (MMIO read) is root-only; nothing else touches hardware.
+//  Boot-arg -phxbringupoff disables it; -phxoff disables it and the rest of the driver (PhxAccel, phxboot). ReadRegs (MMIO read) is root-only; nothing else touches hardware.
 //
 
 #include <IOKit/IOService.h>
@@ -285,7 +285,8 @@ OSDefineMetaClassAndStructors(IOAccelPhxNativeClient, IOUserClient)
 
 bool PhxBringup::start(IOService *provider) {
     int dummy = 0;
-    if (PE_parse_boot_argn("-phxbringupoff", &dummy, sizeof(dummy)))
+    // -phxoff turns everything off (PhxBringup, PhxAMDFB, NMXAccel, the phxboot daemon); -phxbringupoff only this kext
+    if (PE_parse_boot_argn("-phxbringupoff", &dummy, sizeof(dummy)) || PE_parse_boot_argn("-phxoff", &dummy, sizeof(dummy)))
         return false;
     if (!IOService::start(provider))
         return false;

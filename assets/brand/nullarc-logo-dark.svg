@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 447 128" width="447" height="128" role="img" aria-label="nullarc">
+  <title>nullarc</title>
+  <defs>
+    <linearGradient id="nl-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1C2131"/>
+      <stop offset="1" stop-color="#07080C"/>
+    </linearGradient>
+    <linearGradient id="nl-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="nl-arc" gradientUnits="userSpaceOnUse" x1="62" y1="194" x2="198" y2="58">
+      <stop offset="0" stop-color="#FF3D2E"/>
+      <stop offset="0.5" stop-color="#FF2D87"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+    <mask id="nl-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <rect width="256" height="256" fill="#FFFFFF"/>
+      <line x1="62" y1="194" x2="198" y2="58" stroke="#000000" stroke-width="40" stroke-linecap="round"/>
+    </mask>
+    <filter id="nl-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+  <g transform="scale(0.5)">
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#nl-tile)"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#nl-sheen)"/>
+  <rect x="8.75" y="8.75" width="238.5" height="238.5" rx="55.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1.5"/>
+  <g opacity="0.55" filter="url(#nl-glow)">
+    <path d="M191.03 116.89 A64 64 0 1 1 139.11 64.97" fill="none" stroke="url(#nl-arc)" stroke-width="22" stroke-linecap="round"/>
+    <line x1="72" y1="184" x2="194" y2="62" stroke="url(#nl-arc)" stroke-width="22" stroke-linecap="round"/>
+  </g>
+  <path d="M191.03 116.89 A64 64 0 1 1 139.11 64.97" fill="none" stroke="url(#nl-arc)" stroke-width="22" stroke-linecap="round" mask="url(#nl-cut)"/>
+  <line x1="72" y1="184" x2="194" y2="62" stroke="url(#nl-arc)" stroke-width="22" stroke-linecap="round"/>
+</g>
+  <defs>
+    <linearGradient id="nl-word" gradientUnits="userSpaceOnUse" x1="164" y1="0" x2="286" y2="0">
+      <stop offset="0" stop-color="#FF3D2E"/>
+      <stop offset="0.5" stop-color="#FF2D87"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(152 -10)" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 100V78A18 18 0 0 1 36 78V100 M53 60V82A18 18 0 0 0 89 82M89 60V100 M106 36V88A12 12 0 0 0 118 100 M135 36V88A12 12 0 0 0 147 100" stroke="#F2F4F8"/>
+    <path d="M182 62A18 18 0 1 0 182 98A18 18 0 1 0 182 62M200 60V100 M217 100V78A18 18 0 0 1 235 60H239 M285.57 66.21A18 18 0 1 0 285.57 93.79" stroke="url(#nl-word)"/>
+  </g>
+</svg>

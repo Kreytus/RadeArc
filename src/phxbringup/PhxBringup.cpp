@@ -24,7 +24,7 @@
 #include "PhxNativeABI.h"
 #include "rdna3_chip_profile.h"
 
-#define PHX_KEXT_BUILD 34u
+#define PHX_KEXT_BUILD 35u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -95,9 +95,11 @@ public:
     // The chip, from the IP discovery table (rdna3_chip_profile): nullptr = unknown, nothing but reads is allowed.
     const rdna3::ChipProfile *chipProfile() const { return chip; }
     // Commands that write the GPU (PSP, SMU, registers, VRAM, doorbells, queues, the claim) are refused unless the chip
-    // is known and its bring-up is implemented. Phoenix 2 bring-up (gc_11_0_4 / psp_13_0_11 firmware) comes in a later
-    // step; until then the upstream scripts would load Phoenix 1 firmware into it, so it is read-only.
-    bool hwWritesAllowed() const { return chip && chip->chip == rdna3::PhxChip::Phoenix1; }
+    // is known. Phoenix 2 bring-up (phxfw firmware plan, TOC/TMR as Linux, mesboot layout from the carve-out) has not run
+    // on hardware yet, so it is opt-in: the boot-arg -phxp2 enables it, without it Phoenix 2 stays read-only.
+    bool hwWritesAllowed() const {
+        return chip && (chip->chip == rdna3::PhxChip::Phoenix1 || (chip->chip == rdna3::PhxChip::Phoenix2 && p2OptIn));
+    }
     uint32_t gbAddrConfig() const;
     uint32_t gcVersion() const {
         return chip ? (uint32_t(chip->gc.major) << 16) | (uint32_t(chip->gc.minor) << 8) | chip->gc.revision : 0;
@@ -198,6 +200,7 @@ private:
     void vmFlushTlb(uint32_t vmid) const;
     void ringPut(GpuQueue &q, uint32_t idx, uint32_t value);
     bool debug{false};
+    bool p2OptIn{false};   // boot-arg -phxp2
     bool smuUsed{false};
     volatile SInt32 sessionOpen{0};
 };
@@ -312,6 +315,7 @@ bool PhxBringup::start(IOService *provider) {
     gpuLock = IOLockAlloc();
     uint32_t dbg = 0;
     debug = PE_parse_boot_argn("phxdebug", &dbg, sizeof(dbg)) && dbg == 1;
+    p2OptIn = PE_parse_boot_argn("-phxp2", &dummy, sizeof(dummy));
     if (mmio)
         identifyChip();
     if (chip) {
@@ -330,7 +334,7 @@ bool PhxBringup::start(IOService *provider) {
     setProperty("phx-fb-aper-len", fbAperLen, 64);
     IOLog("PhxBringup: service up (mmio %s, bar0 %s %llu MiB, debug %d, chip %s%s)\n", mmio ? "mapped" : "unmapped",
           fbAper ? "mapped" : "unmapped", (unsigned long long)(fbAperLen >> 20), debug, chip ? chip->name : "unknown",
-          chip && !hwWritesAllowed() ? ", read-only" : "");
+          chip && !hwWritesAllowed() ? ", read-only (boot-arg -phxp2 enables Phoenix 2 bring-up)" : "");
     registerService();
     return true;
 }

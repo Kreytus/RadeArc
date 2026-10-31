@@ -22,10 +22,61 @@
 
 static io_connect_t conn;
 
+// Memory layout. Phoenix (780M): the Firebat U6C values upstream copied from its Linux trace, unchanged. Phoenix 2: from
+// the carve-out PhxBringup reads (phx-fb-mc-base / phx-fb-size / phx-fb-phys), the way Linux programs the GFX hub
+// (gfxhub_v3_0.c gfxhub_v3_0_init_system_aperture_regs: SYSTEM_APERTURE_LOW/HIGH = fb_start/fb_end >> 18, DEFAULT_ADDR =
+// the scratch page's system address >> 12, L2 PROTECTION_FAULT_DEFAULT_ADDR = Linux's dummy page >> 12). macOS has no
+// dummy page, so both use a VRAM page set aside for it (kScratchOff, below fw_buf) rather than a Linux system address.
+static uint64_t g_vram_mc = 0x8000000000ull, g_fb_pa = 0x6A0000000ull;
+static uint32_t g_ap_low = 0x00200000, g_ap_high = 0x00205fff, g_def_lsb = 0x006a0f9f, g_def_msb = 0;
+static uint32_t g_fault_lo = 0x0000a23c, g_fault_hi = 0;
+static const uint64_t kScratchOff = 0x3FFF000ull;
+
+static int prop_u64(io_service_t s, const char *key, uint64_t *v)
+{
+   CFStringRef k = CFStringCreateWithCString(kCFAllocatorDefault, key, kCFStringEncodingUTF8);
+   CFTypeRef p = IORegistryEntryCreateCFProperty(s, k, kCFAllocatorDefault, 0);
+   CFRelease(k);
+   int ok = p && CFGetTypeID(p) == CFNumberGetTypeID() && CFNumberGetValue((CFNumberRef)p, kCFNumberSInt64Type, v);
+   if (p) CFRelease(p);
+   return ok;
+}
+// 0 when the chip is known and its layout set, -1 otherwise (then nothing is touched)
+static int chip_layout(io_service_t s)
+{
+   char chip[32] = "";
+   CFTypeRef p = IORegistryEntryCreateCFProperty(s, CFSTR("phx-chip"), kCFAllocatorDefault, 0);
+   if (p && CFGetTypeID(p) == CFStringGetTypeID()) CFStringGetCString((CFStringRef)p, chip, sizeof chip, kCFStringEncodingUTF8);
+   if (p) CFRelease(p);
+   if (!strcmp(chip, "Phoenix")) {
+      printf("mesboot: chip Phoenix, Firebat U6C layout (VRAM MC 0x%llx, FB phys 0x%llx)\n",
+             (unsigned long long)g_vram_mc, (unsigned long long)g_fb_pa);
+      return 0;
+   }
+   if (strcmp(chip, "Phoenix 2")) { fprintf(stderr, "mesboot: chip '%s' not supported: nothing done\n", chip); return -1; }
+   uint64_t mc = 0, size = 0, pa = 0;
+   if (!prop_u64(s, "phx-fb-mc-base", &mc) || !prop_u64(s, "phx-fb-size", &size) || !prop_u64(s, "phx-fb-phys", &pa) ||
+       !mc || !pa || size < 0x10000000ull) {
+      fprintf(stderr, "mesboot: Phoenix 2 carve-out not readable (mc 0x%llx size 0x%llx phys 0x%llx): nothing done\n",
+              (unsigned long long)mc, (unsigned long long)size, (unsigned long long)pa);
+      return -1;
+   }
+   g_vram_mc = mc; g_fb_pa = pa;
+   g_ap_low = (uint32_t)(mc >> 18); g_ap_high = (uint32_t)((mc + size - 1) >> 18);
+   const uint64_t scratch = pa + kScratchOff;
+   g_def_lsb = (uint32_t)(scratch >> 12); g_def_msb = (uint32_t)(scratch >> 44);
+   g_fault_lo = g_def_lsb; g_fault_hi = g_def_msb;
+   printf("mesboot: chip Phoenix 2, VRAM MC 0x%llx size %llu MiB, FB phys 0x%llx, aperture 0x%x..0x%x, scratch 0x%llx\n",
+          (unsigned long long)mc, (unsigned long long)(size >> 20), (unsigned long long)pa, g_ap_low, g_ap_high,
+          (unsigned long long)scratch);
+   return 0;
+}
+
 static int open_kext(void)
 {
    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("PhxBringup"));
    if (!svc) { fprintf(stderr, "no PhxBringup\n"); return -1; }
+   if (chip_layout(svc)) { IOObjectRelease(svc); return -1; }
    kern_return_t kr = IOServiceOpen(svc, mach_task_self(), UC_TYPE, &conn);
    uint64_t hin[2] = {1, 0}, hout[4]; uint32_t hn = 4;
    if (kr == 0) kr = IOConnectCallScalarMethod(conn, SEL_HELLO, hin, 2, hout, &hn);
@@ -70,11 +121,11 @@ static uint32_t vr(uint64_t off)
 }
 
 
-#define VRAM_MC 0x8000000000ull          // MC address of VRAM offset 0
+#define VRAM_MC g_vram_mc                // MC address of VRAM offset 0 (chip_layout)
 #define GART_VA 0x7FFF00000000ull            // VA = GART_VA + vram offset (first 128 MiB)
 #define GART_PT 0x2400000ull             // flat PTE table (VRAM offset)
 #define GART_N 32768
-#define FB_PA 0x6A0000000ull             // GCMC_VM_FB_OFFSET << 24
+#define FB_PA g_fb_pa                    // GCMC_VM_FB_OFFSET << 24 (chip_layout)
 
 #define SEG0(o) (0x1260u + (o))
 #define SEG1(o) (0xA000u + (o))
@@ -106,9 +157,9 @@ static void gart(void)
    wr(SEG0(0x16f3), (uint32_t)((FB_PA + GART_PT) | 1)); wr(SEG0(0x16f4), (uint32_t)((FB_PA + GART_PT) >> 32));   // PDB base = physical (FB_PA + vram offset), as the Linux trace
    // system aperture / AGP / defaults exactly as the Linux trace (gfxhub_v3_0_init_system_aperture_regs)
    wr(SEG0(0x167c), 0); wr(SEG0(0x167b), 0x00ffffff); wr(SEG0(0x167a), 0);      // AGP_BASE/BOT/TOP (AGP off)
-   wr(SEG0(0x167d), 0x00200000); wr(SEG0(0x167e), 0x00205fff);                  // SYSTEM_APERTURE LOW/HIGH = VRAM MC range
-   wr(SEG0(0x15a8), 0x006a0f9f); wr(SEG0(0x15a9), 0);                           // SYSTEM_APERTURE_DEFAULT_ADDR LSB/MSB
-   wr(SEG0(0x15cb), 0x0000a23c); wr(SEG0(0x15cc), 0);                           // L2 protection fault default addr
+   wr(SEG0(0x167d), g_ap_low); wr(SEG0(0x167e), g_ap_high);                     // SYSTEM_APERTURE LOW/HIGH = VRAM MC range
+   wr(SEG0(0x15a8), g_def_lsb); wr(SEG0(0x15a9), g_def_msb);                    // SYSTEM_APERTURE_DEFAULT_ADDR LSB/MSB
+   wr(SEG0(0x15cb), g_fault_lo); wr(SEG0(0x15cc), g_fault_hi);                  // L2 protection fault default addr
    wr(SEG0(0x15c5), 0x00060000);                                                // L2_PROTECTION_FAULT_CNTL2
    wr(SEG0(0x15c4), env_on("FAULT_DEFAULT") ? 0x3ffffffc : 0x00000002);   // debug: no default-page redirect so faults are recorded                                                // L2_PROTECTION_FAULT_CNTL (fault handling on; was missing -> silent drops)
    wr(SEG0(0x15ce), 0xffffffff); wr(SEG0(0x15cf), 0x0000000f); wr(SEG0(0x15d0), 0);  // identity aperture LOW/HIGH (disabled)

@@ -274,3 +274,18 @@ Expected in `~/Desktop/testclk.txt`:
 - the DPM table: `levels: dcf N disp/dpp N ...`, then DcfClocks / DispClocks / DppClocks / SocClocks in MHz and the
   DfPstate rows (FClk / MemClk for the DDR5)
 - `clkinfo exit 0`
+
+**Test clk, passed** (package 01b37b5, `hardware/dumps/b650m_8500g/testclk.txt`):
+- DENTIST VCO 2400 MHz (FbMult 50 × 48 MHz). `DENTIST_DISPCLK_CNTL` 0x00193a00: RDIVIDER DID 0x3a = divider 14.5,
+  so **DISPCLK 165.5 MHz** now (GOP, for 148.5 MHz pixels). The WDIVIDER fields read 0: the SMU sets the clocks.
+  The first build printed 1200 MHz from WDIVIDER; fixed to read RDIVIDER.
+- The SMU answers on the VBIOSSMC mailbox:
+  - version 0x004c6700
+  - DPREFCLK 600 MHz (Linux assumes the same), DTBCLK 600 MHz
+  - FCLK 2000 MHz
+- DPM table (TransferTableSmu2Dram into frame-buffer memory):
+  - DCFCLK 200/400/436/533/600/685/800/960 MHz
+  - DISPCLK = DPPCLK 600/685/800/800/960/960/960/1200 MHz
+  - SOCCLK 400…1200 MHz
+  - 2 DF P-states: FCLK 2000 / MemClk 2600, and 500 / 1000
+- So 144 Hz (335.77 MHz pixels) needs a higher DISPCLK, set through SMU `SetDispclkFreq`. The value comes from DML.

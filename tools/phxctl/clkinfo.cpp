@@ -166,12 +166,14 @@ int main(int argc, char **argv) {
     const uint32_t pll = rd(CLK1_CLK_PLL_REQ), dentist = rd(DENTIST_DISPCLK_CNTL);
     const uint32_t fbInt = pll & 0x1ff, fbFrac = (pll >> 16) & 0xffff;
     const uint64_t vcoKhz = ((uint64_t)fbInt * 65536 + fbFrac) * 48000 / 65536;
-    const int dispDid = dentist & 0x7f, dppDid = (dentist >> 24) & 0x7f;
+    // the running DISPCLK divider is DENTIST_DISPCLK_RDIVIDER (14:8): dccg314_trigger_dio_fifo_resync reads it back.
+    // The WDIVIDER fields read 0 on the 8500G: on DCN 3.1.4 the SMU (SetDispclkFreq/SetDppclkFreq) sets the clocks.
+    const int dispDid = (dentist >> 8) & 0x7f, dppDid = (dentist >> 24) & 0x7f;
     const uint64_t dispKhz = vcoKhz * 4 / dividerFromDid(dispDid), dppKhz = vcoKhz * 4 / dividerFromDid(dppDid);
     printf("== clocks now\n");
     printf("  CLK1_CLK_PLL_REQ [0x%05x] = 0x%08x: FbMult %u + %u/65536 -> DENTIST VCO %llu kHz\n", CLK1_CLK_PLL_REQ, pll,
            fbInt, fbFrac, (unsigned long long)vcoKhz);
-    printf("  DENTIST_DISPCLK_CNTL [0x%05x] = 0x%08x: DISPCLK DID 0x%02x -> %llu kHz, DPPCLK DID 0x%02x -> %llu kHz\n",
+    printf("  DENTIST_DISPCLK_CNTL [0x%05x] = 0x%08x: DISPCLK RDIVIDER DID 0x%02x -> %llu kHz (DPPCLK WDIVIDER DID 0x%02x -> %llu kHz)\n",
            DENTIST_DISPCLK_CNTL, dentist, dispDid, (unsigned long long)dispKhz, dppDid, (unsigned long long)dppKhz);
     printf("  VBIOSSMC mailbox: msg 0x%08x arg 0x%08x resp 0x%08x\n", rd(MP1_C2PMSG_67), rd(MP1_C2PMSG_83), rd(MP1_C2PMSG_91));
     if (dry) { printf("dry run: no SMU message sent\n"); return 0; }

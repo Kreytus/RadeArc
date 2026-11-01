@@ -80,12 +80,11 @@ class PhxAMDFB : public IOFramebuffer {
     // The pipe the firmware lit (phx_dcn_pipe.h): its OTG, the DIG back end driving it and that DIG's signal. DVI/HDMI is
     // an external display; DP (eDP or an external port) keeps the built-in panel the 780M machines have.
     phxdcn::Pipe fPipe;
-    // What WindowServer is told. Test G (8500G, MSI G255F over HDMI/DVI, 2026-11-01): reported as an external display
-    // with its EDID, CoreDisplay made display ID 0 for it and asserted in CoreDisplay_CreateDisplayForCGXDisplayDevice
-    // three times. Upstream's 780M (built-in, no EDID) composites fine. So by default the pipe is presented the upstream
-    // way whatever it is, and the two Phase 3a reports are opt-in for testing: boot-arg -phxfbext (external connection)
-    // and -phxfbedid (EDID to IODisplay). The pipe and EDID are still read and logged.
-    bool fReportExternal = false, fReportEdid = false;
+    // What WindowServer is told. A DVI/HDMI pipe is reported as an external display with its EDID: Test H on the 8500G
+    // (2026-11-01) showed "MSI G255F" in System Information with WindowServer compositing on the GPU. (Test G's
+    // CoreDisplay assert, display ID 0, was the unsigned Mesa dylib, not this.) Boot-arg -phxfbint presents any pipe the
+    // upstream way (built-in, no EDID). DP/eDP pipes are always built-in, as on the 780M machines.
+    bool fReportExternal = true, fReportEdid = true;
     bool external() const { return fReportExternal && fPipe.external(); }
     // The external monitor's EDID (phx_dcn_i2c.h: DDC1, the DCN hardware I2C engine as Linux drives it), read once at start
     // for an external pipe and handed to IODisplay through getDDCBlock. Empty: no DDC answer, IODisplay names a generic
@@ -524,8 +523,7 @@ bool PhxAMDFB::start(IOService *provider)
     if (!takeBootArming()) { PFBLOG("NVRAM phxfb-boot not set: leaving the firmware framebuffer this boot"); return false; }
     fPCI = OSDynamicCast(IOPCIDevice, provider);
     if (!fPCI) return false;
-    fReportExternal = PE_parse_boot_argn("-phxfbext", arg, sizeof arg);
-    fReportEdid = PE_parse_boot_argn("-phxfbedid", arg, sizeof arg);
+    if (PE_parse_boot_argn("-phxfbint", arg, sizeof arg)) fReportExternal = fReportEdid = false;
     if (OSIterator *it = fPCI->getChildIterator(gIOServicePlane)) {
         while (OSObject *o = it->getNextObject())
             if (o != this && OSDynamicCast(IOFramebuffer, o)) fBeside = true;

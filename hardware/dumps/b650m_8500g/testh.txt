@@ -1,0 +1,19 @@
+mesboot: chip Phoenix 2, VRAM MC 0x8000000000 size 2048 MiB, FB phys 0x3e0000000, aperture 0x200000..0x201fff, scratch 0x3e3fff000
+claim -> kr 0x0
+armed and released at 13:02:40; agdc 1
+WindowServer pid 201, frames on the panel 1163
+PhxAMDFB armed for the next boot
+done 13:04:12
+radv-darwin: native kext: ABI 1.12, build 37, VMID 8, max 64 IBs/submit, canned phoenix2, GB_ADDR_CONFIG 0x00000142, VRAM 256 MiB visible + 1536 MiB hi, GTT cap 512 MiB
+Graphics/Displays:
+
+    AMD Radeon 740M:
+
+--
+      Displays:
+        MSI G255F:
+          Resolution: 1920 x 1080 (1080p FHD - Full High Definition)
+          UI Looks like: 1920 x 1080 @ 60.00Hz
+Timestamp                       Thread     Type        Activity             PID    TTL  
+2026-11-01 13:02:32.221910+0200 0x702      Default     0x0                  0      0    kernel: (PhxAccel) PhxFB: pipe: OTG0 -> DIG0, signal DVI (DIG_MODE 2): external display, reported external with EDID
+2026-11-01 13:02:32.246673+0200 0x702      Default     0x0                  0      0    kernel: (PhxAccel) PhxFB: EDID over DDC1: 256 bytes, MSI product 0x3bc0 "MSI G255F"

@@ -191,3 +191,6 @@ reboot, or boot-arg `-phxoff`.
      was refused ("mapped file has no cdhash").
   2. A kernel panic (CPU stuck in IOPCIBridge::saveDeviceState's config read) during an M2 boot's bring-up: the GPU's
      PCI device had no power child.
+- **Test H, passed** (boot-args `-phxfbext -phxfbedid` on package 3890276): the pipe was reported as external with its
+  EDID. System Information names the display **MSI G255F** (1920×1080 at 60 Hz), and WindowServer composites on the GPU
+  (`frames on the panel 1163`). This reporting is now the default for DVI/HDMI pipes; `-phxfbint` turns it off.

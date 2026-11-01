@@ -25,7 +25,11 @@ jobs:
     - name: Upstream release
       run: |
         mkdir -p "$RUNNER_TEMP/up" && cd "$RUNNER_TEMP/up"
-        gh release download --repo luuumi-dev/nullarc --pattern 'nullarc-*.zip'
+        gh release list --repo luuumi-dev/nullarc -L 20 || true
+        tag=$(gh release list --repo luuumi-dev/nullarc -L 1 --json tagName -q '.[0].tagName' || true)
+        [ -n "$tag" ] || { echo "::error::luuumi-dev/nullarc has no releases (NVMTLDriver.bundle comes only from one)"; exit 1; }
+        echo "upstream release $tag"
+        gh release download "$tag" --repo luuumi-dev/nullarc --pattern 'nullarc-*.zip'
         ls -la
         ditto -x -k nullarc-*.zip .
         UP=$(ls -d "$RUNNER_TEMP"/up/nullarc-*/ | head -1)

@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 37u
+#define PHX_KEXT_BUILD 38u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -37,6 +37,24 @@ SYSCTL_INT(_debug, OID_AUTO, phxbos_flush, CTLFLAG_RW | CTLFLAG_LOCKED, &gBosFlu
            "BO cache maintenance per submit/wait: 0 none, 1 clflushopt, 2 clflush");
 SYSCTL_QUAD(_debug, OID_AUTO, phxbos_flush_bytes, CTLFLAG_RD | CTLFLAG_LOCKED, (SInt64 *)&gBosFlushBytes,
             "bytes of BOs flushed from the CPU caches");
+// debug.phxbo_*: why BO creation or mapping was refused, and the most handles/mappings one client has held, so a
+// table that fills up shows here instead of only as "Failed to allocate MTLTexture" in WindowServer.
+static volatile UInt32 gBoHandlesFull, gBoMapsFull, gBoNoMem, gBoPeakHandles, gBoPeakMaps;
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_handles_full, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoHandlesFull, 0,
+            "BO creations refused: all handles in use");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_maps_full, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoMapsFull, 0,
+            "GPU VA mappings refused: mapping table full");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_nomem, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoNoMem, 0,
+            "BO creations refused: pool budget or memory");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_handles, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoPeakHandles, 0,
+            "most BO handles one client has held");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_maps, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoPeakMaps, 0,
+            "most GPU VA mappings one client has held");
+static void notePeak(volatile UInt32 *peak, UInt32 v) {
+    UInt32 old = *peak;
+    while (v > old && !OSCompareAndSwap(old, v, peak))
+        old = *peak;
+}
 static volatile UInt32 gSysctlUp;
 
 // psp_gfx_rb_frame (64 B) — the ring entry the PSP reads. Only 5 fields are set; the rest stay zero
@@ -63,7 +81,9 @@ static constexpr uint64_t kGttCap = 512ull << 20;
 static constexpr uint64_t kGttMaxBo = 256ull << 20;
 static constexpr uint64_t kHostCap = 4096ull << 20, kHostMaxBo = 1024ull << 20;   // host imports, per client
 static constexpr uint64_t kVaMask = (1ull << 48) - 1;
-static constexpr int kMaxMaps = 4096;
+// GPU VA mappings per client. WindowServer on the 740M ran out of the earlier 4096 (with the 4095 BO handles): every
+// MTLTexture allocation failed, 64x64 included, the desktop flickered and WindowServer crashed (2026-11-01).
+static constexpr int kMaxMaps = 16384;
 
 static bool vaCanonical(uint64_t va) {
     uint64_t top = va >> 47;
@@ -282,6 +302,16 @@ private:
     Map *maps{nullptr};    // kMaxMaps entries
     bool ctx[PHXN_MAX_CTX + 1]{};
     uint64_t visUsed{0}, hiUsed{0}, gttUsed{0}, hostUsed{0};
+    uint32_t handlesUsed{0}, mapsUsed{0}, handleHint{1};
+    // a free BO handle (0 = none), searched from where the last one was found, so handing out thousands stays linear
+    uint32_t takeHandle() {
+        for (uint32_t n = 1; n < PHXN_MAX_BOS; n++) {
+            const uint32_t h = 1 + (handleHint - 1 + n - 1) % (PHXN_MAX_BOS - 1);
+            if (!bos[h].md) { handleHint = h + 1 >= PHXN_MAX_BOS ? 1 : h + 1; return h; }
+        }
+        return 0;
+    }
+    void handleTaken() { notePeak(&gBoPeakHandles, ++handlesUsed); }
     task_t task{nullptr};
     uint64_t emitted{0};
     uint32_t pendFenceHandle{0}, pendFenceOffset{0};
@@ -375,6 +405,11 @@ void PhxBringup::stop(IOService *provider) {
     if (gSysctlUp) {
         sysctl_unregister_oid(&sysctl__debug_phxbos_flush);
         sysctl_unregister_oid(&sysctl__debug_phxbos_flush_bytes);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_handles_full);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_maps_full);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_nomem);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_peak_handles);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_peak_maps);
         gSysctlUp = 0;
     }
     clearRing();
@@ -1391,6 +1426,11 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
     if (!gSysctlUp && OSCompareAndSwap(0, 1, &gSysctlUp)) {
         sysctl_register_oid(&sysctl__debug_phxbos_flush);
         sysctl_register_oid(&sysctl__debug_phxbos_flush_bytes);
+        sysctl_register_oid(&sysctl__debug_phxbo_handles_full);
+        sysctl_register_oid(&sysctl__debug_phxbo_maps_full);
+        sysctl_register_oid(&sysctl__debug_phxbo_nomem);
+        sysctl_register_oid(&sysctl__debug_phxbo_peak_handles);
+        sysctl_register_oid(&sysctl__debug_phxbo_peak_maps);
     }
     if (type != PHXN_UC_TYPE)
         return kIOReturnBadArgument;
@@ -1658,21 +1698,24 @@ IOReturn IOAccelPhxNativeClient::doBoCreate(IOExternalMethodArguments *a) {
             bits = PHXN_PLACED_HI_POOL | PHXN_PLACED_ZEROED;
             pool = &hiUsed;
         } else {
+            OSIncrementAtomic(&gBoNoMem);
             return kIOReturnNoMemory;
         }
     } else {
-        if (size > kGttMaxBo || gttUsed + size > kGttCap)
+        if (size > kGttMaxBo || gttUsed + size > kGttCap) {
+            OSIncrementAtomic(&gBoNoMem);
             return kIOReturnNoMemory;
+        }
         domain = 2;
         bits = PHXN_PLACED_ZEROED;
         pool = &gttUsed;
     }
 
-    uint32_t h = 1;
-    while (h < PHXN_MAX_BOS && bos[h].md)
-        h++;
-    if (h >= PHXN_MAX_BOS)
+    const uint32_t h = takeHandle();
+    if (!h) {
+        OSIncrementAtomic(&gBoHandlesFull);
         return kIOReturnNoResources;
+    }
 
     // Page alignment only: the GPU maps BOs page by page, and the client picks the VA (GEMVA) with its own alignment.
     // Handed to IOBufferMemoryDescriptor, RADV's 64 KiB..2 MiB alignment made every allocation PHYSICALLY CONTIGUOUS
@@ -1686,6 +1729,7 @@ IOReturn IOAccelPhxNativeClient::doBoCreate(IOExternalMethodArguments *a) {
     bzero(md->getBytesNoCopy(), size);
     *pool += size;
     bos[h] = Bo{md, size, domain, bits, static_cast<uint8_t *>(md->getBytesNoCopy()), false};
+    handleTaken();
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
     a->scalarOutput[2] = domain;
@@ -1701,8 +1745,10 @@ IOReturn IOAccelPhxNativeClient::doBoFree(IOExternalMethodArguments *a) {
     if (!b)
         return kIOReturnNotFound;
     for (int i = 0; i < kMaxMaps; i++)
-        if (maps[i].used && maps[i].handle == h)
+        if (maps[i].used && maps[i].handle == h) {
             maps[i].used = false;
+            mapsUsed--;
+        }
     if (b->host)
         hostUsed -= b->size;
     else if (b->domain == 2)
@@ -1720,6 +1766,8 @@ void IOAccelPhxNativeClient::boRelease(Bo &b) {
         b.md->complete();
     b.md->release();
     b = Bo{};
+    if (handlesUsed)
+        handlesUsed--;
 }
 
 // PHXN_SEL_BOIMPORTHOST (ABI 1.9, VK_EXT_external_memory_host): a BO over the caller's own pages, wired for as long as
@@ -1735,11 +1783,11 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
         return kIOReturnBadArgument;
     if (size > kHostMaxBo || hostUsed + size > kHostCap)
         return kIOReturnNoMemory;
-    uint32_t h = 1;
-    while (h < PHXN_MAX_BOS && bos[h].md)
-        h++;
-    if (h >= PHXN_MAX_BOS)
+    const uint32_t h = takeHandle();
+    if (!h) {
+        OSIncrementAtomic(&gBoHandlesFull);
         return kIOReturnNoResources;
+    }
     IOMemoryDescriptor *md = IOMemoryDescriptor::withAddressRange(va, size, kIODirectionInOut, task);
     if (!md)
         return kIOReturnNoMemory;
@@ -1750,6 +1798,7 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
     }
     hostUsed += size;
     bos[h] = Bo{md, size, 2, 0, nullptr, true};
+    handleTaken();
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
     a->scalarOutput[2] = 0;
@@ -1794,13 +1843,17 @@ IOReturn IOAccelPhxNativeClient::doGemVa(IOExternalMethodArguments *a) {
             if (va < maps[i].va + maps[i].size && maps[i].va < va + v->map_size)
                 return kIOReturnBadArgument;
         }
-        if (freei < 0)
+        if (freei < 0) {
+            OSIncrementAtomic(&gBoMapsFull);
             return kIOReturnNoMemory;
+        }
         maps[freei] = Map{true, v->handle, va, v->map_size, v->offset_in_bo, v->flags};
+        notePeak(&gBoPeakMaps, ++mapsUsed);
         if (owner->gpuReady()) {
             const IOReturn r = ensureVmid() ? owner->vmMap(vmid, va, b->md, v->offset_in_bo, v->map_size) : kIOReturnNoResources;
             if (r != kIOReturnSuccess) {
                 maps[freei].used = false;
+                mapsUsed--;
                 return r;
             }
         }
@@ -1809,6 +1862,7 @@ IOReturn IOAccelPhxNativeClient::doGemVa(IOExternalMethodArguments *a) {
     for (int i = 0; i < kMaxMaps; i++) {
         if (maps[i].used && maps[i].handle == v->handle && maps[i].va == va && maps[i].size == v->map_size) {
             maps[i].used = false;
+            mapsUsed--;
             if (vmid)
                 owner->vmUnmap(vmid, va, v->map_size);
             return kIOReturnSuccess;

@@ -22,3 +22,7 @@ Check (no GPU, in-process mock kext):
   VK_ICD_FILENAMES=build/src/amd/vulkan/radeon_devenv_icd.x86_64.json RADV_DARWIN_MOCK=1 tools/vkprobe/vkprobe
   -> "AMD Radeon 780M Graphics (RADV PHOENIX) 1002:1900", device created, compute pipeline compiled (ACO gfx1103).
   RADV_DARWIN_MOCK_GC=0xb0004 -> "... (RADV PHOENIX2) 1002:15c8". CI does both (.github/workflows/build-mesa.yml).
+
+0008  radv/darwin: 16384 BO handles. Matches PhxBringup build 38 (PHXN_MAX_BOS 16384). WindowServer ran out of the
+      4095 handles: MTLTexture allocations failed down to 64x64, the desktop flickered, WindowServer crashed.
+      Install it together with build 38: an older Mesa refuses handles above 4095.

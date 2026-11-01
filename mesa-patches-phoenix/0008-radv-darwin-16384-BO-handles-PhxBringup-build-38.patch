@@ -1,0 +1,45 @@
+From 5715a2737aa79a715a64ec9e296d14acdd6bbb60 Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Sun, 1 Nov 2026 15:03:57 +0000
+Subject: [PATCH] radv/darwin: 16384 BO handles (PhxBringup build 38)
+
+WindowServer on the Radeon 740M ran out of the 4095 kernel BO handles: every MTLTexture
+allocation failed, down to 64x64, and the desktop flickered until WindowServer crashed
+(2026-11-01). PhxBringup build 38 hands out handles 1..16383; this side's table and its
+handle checks follow. The mock's map table grows the same way.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ include/darwin/navi48_native_abi.h     | 2 +-
+ src/amd/common/darwin/ac_darwin_mock.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/darwin/navi48_native_abi.h b/include/darwin/navi48_native_abi.h
+index 74b4468..5883293 100644
+--- a/include/darwin/navi48_native_abi.h
++++ b/include/darwin/navi48_native_abi.h
+@@ -29,7 +29,7 @@
+ #define N48N_ABI_MINOR     11u           /* 1.11 (kext 0.0.661, M6 Stage 1b): selectors 22..26 N48N_SEL_SCANX_* - the scanout of INSTANCE 2 (the monitor B: HUBP2 / OTG2), poll-only, behind the boot-args navi48-m6=1 AND navi48-m6flip=1 (a latch OFF answers every one with Unsupported and touches nothing); N48N_SCANQ_M6FLIP in scan_query.flags says both are on; no struct changes. 1.10 (kext 0.0.640, GPU-apps G4): n48n_info.reserved[3..7] report the session's VRAM budget (N48N_INFO_R_* / N48N_BUDGET_* below), so a user-space allocator (Mesa/RADV) can size its VRAM heap; no selector, no struct size changes. A third client role (APP, a non-root uid >= 501 process on the kernel allow-list) exists behind the boot-args navi48-apps=1 + navi48-multisession=1: it reaches selectors 0, 1, 3..8 and 21 only (never ReadRegs 2, never scanout 9..14, never 15..20); a refused selector is kIOReturnNotPrivileged. 1.9 (kext 0.0.612): selector 21 N48N_SEL_BO_IMPORT_HOST (milestone #11 step 11c: import a page-aligned range of the CALLER's address space as a SYSTEM-memory BO; limits 64 MiB per BO, 256 MiB per client), the class of the N48N user client is renamed IOAccelNavi48NativeClient (WindowServer's sandbox admits iokit-open only for IOAccel* classes; the service name and type 'N48N' are unchanged), and a uid-88 caller is admitted behind the boot-arg navi48-metal-ws=1; 1.8 (kext 0.0.610): selectors 19 N48N_SEL_METAL_NUB_PUBLISH and 20 N48N_SEL_METAL_NUB_WITHDRAW (milestone #9 route A: the software Navi48MetalNub the aux accelerator kext matches; published only on demand, only with the boot-arg navi48-metal=1); 1.7 (kext 0.0.609): HELD mode for row 120: selector 17 N48N_SEL_MODE_HOLD (enter row 120 and RETURN with the mode up, a scanout client may then Acquire and present at 120 Hz) and selector 18 N48N_SEL_MODE_RELEASE (end it, wait, return the final result); verdict 16 HELD, deny 25 / 26, N48N_HOLD_* words; the result's former reserved0 / reserved1 (offsets 204 / 252) are hold_end / hold_flags (the size stays 512 B); 1.6 (kext 0.0.608): row 120's blanked-transition underflow reads, DIO attribution and lock-hold witness code in the result's former reserved[8] (the size stays 512 B); 1.5 (kext 0.0.607): row 120 (the 1440p 120 Hz trial) runs behind the boot-arg navi48-row120=1 with the clock hold (P4); the result's ext.reserved words carry the hold report (its size is unchanged); new deny reasons 22 / 23, verdict 15, flags 22..24; 1.4 (kext 0.0.606): selector 16's result grows from 256 to 512 B (underflow / resync / OTG-lock report) and it accepts the rows 1 (DP1 resync) and 2 (V_TOTAL under the OTG lock) and a flags word; 1.3 (kext 0.0.605): the timed mode-trial selector 16, native-S2d; 1.2 (kext 0.0.604): the DAL experiment selector 15, native-S2-DISPCLK; 1.1 (kext 0.0.603): the scanout selectors 9..14, native-S2a. Reported when Hello asks (below) and in n48n_info.reserved[2]. */
+ #define N48N_HELLO_F_MINOR (1u << 8)     /* Hello flags bit 8: "report the minor": out[0] = ABI | (MINOR << 16). Without it out[0] is exactly the major, as in v1.0. Bit 8, not 0: flags = 1, which T1 leg 1 sends and expects refused, still is. */
+ #define N48N_MAX_IBS       64u
+-#define N48N_MAX_BOS       4096u            /* handles 1..4095; 0 is never valid */
++#define N48N_MAX_BOS       16384u           /* handles 1..16383; 0 is never valid */
+ #define N48N_MAX_CTX       64u              /* ids 1..64 */
+ #define N48N_FENCE_SLOTS   16u
+ #define N48N_WAIT_CAP_NS   2000000000ull
+diff --git a/src/amd/common/darwin/ac_darwin_mock.c b/src/amd/common/darwin/ac_darwin_mock.c
+index 28738b7..b8cc342 100644
+--- a/src/amd/common/darwin/ac_darwin_mock.c
++++ b/src/amd/common/darwin/ac_darwin_mock.c
+@@ -24,7 +24,7 @@
+ #include <time.h>
+ #include <unistd.h>
+ 
+-#define MOCK_MAX_MAPS 4096
++#define MOCK_MAX_MAPS 16384
+ #define MOCK_VIS_TOTAL (168ull << 20)
+ #define MOCK_HI_TOTAL (15ull << 30)
+ #define MOCK_GTT_CAP (512ull << 20)
+-- 
+2.43.0
+

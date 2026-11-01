@@ -19,7 +19,7 @@
 #define PHXN_ABI_MINOR    12u           /* minor the RADV build expects in Hello / info.reserved[2] */
 #define PHXN_HELLO_F_MINOR (1u << 8)
 #define PHXN_MAX_IBS      64u
-#define PHXN_MAX_BOS      4096u         /* handles 1..4095 */
+#define PHXN_MAX_BOS      16384u        /* handles 1..16383 (build 38; Mesa 0008 matches) */
 #define PHXN_MAX_CTX      64u           /* ids 1..64 */
 #define PHXN_FENCE_SLOTS  16u
 #define PHXN_WAIT_CAP_NS  2000000000ull

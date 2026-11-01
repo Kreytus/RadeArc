@@ -10,7 +10,7 @@ on:
 
 jobs:
   kexts:
-    runs-on: macos-14
+    runs-on: macos-15-intel   # macos-14 jobs were cancelled at creation (2026-11-01)
     steps:
     - uses: actions/checkout@v4
 

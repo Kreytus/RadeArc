@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 36u
+#define PHX_KEXT_BUILD 37u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -75,6 +75,7 @@ class PhxBringup : public IOService {
 public:
     bool start(IOService *provider) override;
     void stop(IOService *provider) override;
+    IOReturn setPowerState(unsigned long state, IOService *whatDevice) override;
     IOReturn newUserClient(task_t owningTask, void *securityID, UInt32 type, IOUserClient **handler) override;
 
     bool claimSession();
@@ -134,6 +135,7 @@ private:
     IOPCIDevice *pci{nullptr};
     IOMemoryMap *mmio{nullptr};
     const rdna3::ChipProfile *chip{nullptr};
+    bool pmJoined{false};   // PMinit/joinPMtree done (Phoenix 2): the PCI device is held on
     rdna3::ChipRegs cr{};   // valid when chip is set
     IOLock *smuLock{nullptr};
     // UMA carve-out ("VRAM"): GPU MC address range and the system physical address behind it.
@@ -322,6 +324,23 @@ bool PhxBringup::start(IOService *provider) {
     p2OptIn = PE_parse_boot_argn("-phxp2", &dummy, sizeof(dummy));
     if (mmio)
         identifyChip();
+    // Power management: hold the GPU's PCI device on while this driver runs it. Without a power child, IOPCIFamily may
+    // move the device to a low-power state; in an M2 (PhxAMDFB) boot the framebuffer that normally holds it is not
+    // there, and the 8500G panicked 89 s after power-on with a CPU stuck in IOPCIBridge::saveDeviceState's config read
+    // (setDevicePowerState) while phxboot was bringing the GPU up (Kernel-2026-11-01-122248.panic). Phoenix 2 only, as
+    // that is where it was seen; the Phoenix 1 path stays as it was.
+    if (chip && chip->chip == rdna3::PhxChip::Phoenix2) {
+        static IOPMPowerState kPower[2] = {
+            { kIOPMPowerStateVersion1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            { kIOPMPowerStateVersion1, kIOPMPowerOn | kIOPMDeviceUsable, kIOPMPowerOn, kIOPMPowerOn, 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        PMinit();
+        provider->joinPMtree(this);
+        pmJoined = registerPowerDriver(this, kPower, 2) == kIOReturnSuccess;
+        if (pmJoined)
+            changePowerStateTo(1);
+        setProperty("phx-pm-hold", pmJoined);
+    }
     if (chip) {
         readFbLayout();
         // HDP flush window: the NBIO remap register holds the BAR5 byte offset where writing 0 flushes the
@@ -343,7 +362,16 @@ bool PhxBringup::start(IOService *provider) {
     return true;
 }
 
+// The power states only express "the PCI device must be on"; nothing in the GPU is switched here.
+IOReturn PhxBringup::setPowerState(unsigned long, IOService *) {
+    return kIOPMAckImplied;
+}
+
 void PhxBringup::stop(IOService *provider) {
+    if (pmJoined) {
+        PMstop();
+        pmJoined = false;
+    }
     if (gSysctlUp) {
         sysctl_unregister_oid(&sysctl__debug_phxbos_flush);
         sysctl_unregister_oid(&sysctl__debug_phxbos_flush_bytes);

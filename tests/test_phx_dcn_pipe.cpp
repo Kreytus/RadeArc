@@ -51,10 +51,11 @@ int main() {
     CHECK(r.size() > 100);
     CHECK(r[0x05001] == 0x00010301 && r[0x05571] == 0x00020100);
 
-    // The dump has no DIG_BE_EN_CNTL. GOP drives the monitor through DIG0, so DIG_ENABLE is set there (Linux tells a
-    // firmware-lit link by it, dcn10_is_dig_enabled); PhxAMDFB's log shows the live value.
+    // The dump has no DIG_BE_EN_CNTL: read live under macOS on the same machine (phxctl regs, hardware/dumps/b650m_8500g/
+    // dig_be_en_cntl.txt): DIG0 0x101 (DIG_ENABLE | DIG_SYMCLK_BE_ON), DIG1..4 0x100.
     Regs on = r;
     on[digReg(0, kDigBeEnCntl)] = 0x101;
+    for (uint32_t d = 1; d < kDigCount; d++) on[digReg(d, kDigBeEnCntl)] = 0x100;
     Pipe p = run(on);
     CHECK(p.otg == 0 && p.dig == 0 && p.digMode == kModeDvi && p.external());
     printf("[PASS] test_8500g_gop (OTG0 -> DIG0, DVI: external display)\n");

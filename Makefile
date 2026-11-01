@@ -13,6 +13,7 @@ TESTS = $(TEST_BIN_DIR)/test_rdna3_discovery_uma \
         $(TEST_BIN_DIR)/test_phx_dcn_pipe \
         $(TEST_BIN_DIR)/test_phx_dcn_i2c \
         $(TEST_BIN_DIR)/test_phx_dcn_timing \
+        $(TEST_BIN_DIR)/test_phx_dmub_layout \
         $(TEST_BIN_DIR)/test_r3n_abi
 
 .PHONY: all test clean kext fixtures
@@ -45,6 +46,9 @@ $(TEST_BIN_DIR)/test_phx_dcn_i2c: tests/test_phx_dcn_i2c.cpp src/amd/phx_dcn_i2c
 
 $(TEST_BIN_DIR)/test_phx_dcn_timing: tests/test_phx_dcn_timing.cpp src/amd/phx_dcn_timing.h | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_dcn_timing.cpp -o $@
+
+$(TEST_BIN_DIR)/test_phx_dmub_layout: tests/test_phx_dmub_layout.cpp src/amd/phx_dmub_layout.h | $(TEST_BIN_DIR)
+	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_dmub_layout.cpp -o $@
 
 $(TEST_BIN_DIR)/test_r3n_abi: src/uapi/r3n_user_client.cpp src/winsys/radv_r3n_winsys.cpp tests/test_r3n_abi.cpp | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@

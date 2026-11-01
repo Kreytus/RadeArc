@@ -53,7 +53,34 @@ struct set_pixel_clock_parameter_v1_7 {
     uint8_t reserved1[2];
     uint32_t reserved2;
 };
+struct dig_encoder_stream_setup_parameters_v1_5 {
+    uint8_t digid;
+    uint8_t action;
+    uint8_t digmode;
+    uint8_t lanenum;
+    uint32_t pclk_10khz;
+    uint8_t bitpercolor;
+    uint8_t dplinkrate_270mhz;
+    uint8_t reserved[2];
+};
+struct dig_encoder_generic_cmd_parameters_v1_5 { uint8_t digid; uint8_t action; uint8_t reserved1[2]; uint32_t reserved2[2]; };
+struct dig_encoder_link_setup_parameters_v1_5 {
+    uint8_t digid; uint8_t action; uint8_t digmode; uint8_t lanenum; uint8_t symclk_10khz; uint8_t hpd_sel;
+    uint8_t digfe_sel; uint8_t reserved[2];
+};
+struct dp_panel_mode_set_parameters_v1_5 { uint8_t digid; uint8_t action; uint8_t panelmode; uint8_t reserved1; uint32_t reserved2[2]; };
+union dig_encoder_control_parameters_v1_5 {
+    struct dig_encoder_generic_cmd_parameters_v1_5 cmd_param;
+    struct dig_encoder_stream_setup_parameters_v1_5 stream_param;
+    struct dig_encoder_link_setup_parameters_v1_5 link_param;
+    struct dp_panel_mode_set_parameters_v1_5 dppanel_param;
+};
 // ---- dmub_cmd.h ----
+struct dmub_cmd_digx_encoder_control_data { union dig_encoder_control_parameters_v1_5 dig; };
+struct dmub_rb_cmd_digx_encoder_control {
+    struct dmub_cmd_header header;
+    struct dmub_cmd_digx_encoder_control_data encoder_control;
+};
 struct dmub_dig_transmitter_control_data_v1_7 {
     uint8_t phyid;
     uint8_t action;
@@ -83,6 +110,7 @@ struct dmub_rb_cmd_set_pixel_clock {
     struct dmub_cmd_set_pixel_clock_data pixel_clock;
 };
 union dmub_rb_cmd {
+    struct dmub_rb_cmd_digx_encoder_control digx_encoder_control;
     struct dmub_rb_cmd_dig1_transmitter_control dig1_transmitter_control;
     struct dmub_rb_cmd_set_pixel_clock set_pixel_clock;
     uint8_t raw[64];
@@ -183,6 +211,28 @@ int main() {
         CHECK(!memcmp(a, &cmd, 64));
     }
     printf("[PASS] test_transmitter_disable (DVI, connector 0x0C)\n");
+
+    // encoder_control_dmcub + encoder_control_digx_v1_5 for enc314_stream_encoder_hdmi_set_stream_attribute's cntl
+    for (uint32_t k : clocks) {
+        uint8_t a[64];
+        encoderStreamSetup(a, Signal::Hdmi, k);
+        linux_ref::dmub_rb_cmd cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.digx_encoder_control.header.type = 128;
+        cmd.digx_encoder_control.header.sub_type = 0;
+        cmd.digx_encoder_control.header.payload_bytes =
+            sizeof(cmd.digx_encoder_control) - sizeof(cmd.digx_encoder_control.header);
+        dig_encoder_stream_setup_parameters_v1_5 p{};
+        p.digid = 0;
+        p.action = 0x0F;
+        p.pclk_10khz = k / 10;
+        p.digmode = 3;
+        p.lanenum = 4;
+        cmd.digx_encoder_control.encoder_control.dig.stream_param = p;
+        CHECK(!memcmp(a, &cmd, 64));
+    }
+    CHECK(sizeof(dmub_rb_cmd_digx_encoder_control) - sizeof(dmub_cmd_header) == kPayloadEncoder);
+    printf("[PASS] test_encoder_stream_setup (HDMI, DIG0, STREAM_SETUP 0x0F, 4 lanes)\n");
     printf("=== All tests PASSED successfully ===\n");
     return 0;
 }

@@ -3,10 +3,12 @@
 //
 // Why these commands: the 8500G's VBIOS has no digxencodercontrol / setpixelclock / dig1transmittercontrol tables
 // (docs/PHASE3B_PLAN.md 4e), so command_table2.c's fallbacks run, and with dmub_command_table set they go to DMCUB:
-//   transmitter_control_fallback -> transmitter_control_v1_7 -> transmitter_control_dmcub_v1_7
-//   set_pixel_clock_fallback     -> set_pixel_clock_v7       -> set_pixel_clock_dmcub
-// (Linux v6.17 drivers/gpu/drm/amd/display/dc/bios/command_table2.c). The encoder control command is not used on the
-// HDMI path: DCN programs the stream encoder registers itself (enc314_stream_encoder_hdmi_set_stream_attribute).
+//   encoder_control_fallback     -> encoder_control_digx_v1_5 -> encoder_control_dmcub
+//   transmitter_control_fallback -> transmitter_control_v1_7  -> transmitter_control_dmcub_v1_7
+//   set_pixel_clock_fallback     -> set_pixel_clock_v7        -> set_pixel_clock_dmcub
+// (Linux v6.17 drivers/gpu/drm/amd/display/dc/bios/command_table2.c; dcn314_resource.c debug_defaults sets
+// dmub_command_table and leaves avoid_vbios_exec_table 0, so enc314_stream_encoder_hdmi_set_stream_attribute sends
+// the encoder STREAM_SETUP command instead of its register-only branch).
 //
 // Layouts: dmub/inc/dmub_cmd.h (struct dmub_cmd_header, dmub_dig_transmitter_control_data_v1_7,
 // dmub_rb_cmd_set_pixel_clock) and include/atomfirmware.h (set_pixel_clock_parameter_v1_7). Field values:
@@ -27,12 +29,15 @@ namespace phxdmubcmd {
 
 // dmub_cmd.h
 static constexpr uint8_t kCmdVbios = 128;                 // DMUB_CMD__VBIOS
+static constexpr uint8_t kSubDigxEncoderControl = 0;     // DMUB_CMD__VBIOS_DIGX_ENCODER_CONTROL
 static constexpr uint8_t kSubDig1TransmitterControl = 1;  // DMUB_CMD__VBIOS_DIG1_TRANSMITTER_CONTROL
 static constexpr uint8_t kSubSetPixelClock = 2;           // DMUB_CMD__VBIOS_SET_PIXEL_CLOCK
 static constexpr uint32_t kCmdBytes = 64;                 // union dmub_rb_cmd (DMUB_RB_CMD_SIZE)
 // payload_bytes = sizeof(cmd) - sizeof(header): dig1_transmitter_control = 4 + 60 (v1_7 is the larger union member),
 // set_pixel_clock = 4 + sizeof(set_pixel_clock_parameter_v1_7) 16
-static constexpr uint8_t kPayloadTransmitter = 60, kPayloadPixelClock = 16;
+// digx_encoder_control = 4 + sizeof(union dig_encoder_control_parameters_v1_5) 12
+static constexpr uint8_t kPayloadTransmitter = 60, kPayloadPixelClock = 16, kPayloadEncoder = 12;
+static constexpr uint8_t kEncoderCmdStreamSetup = 0x0F;   // ATOM_ENCODER_CMD_STREAM_SETUP (encoder_action_to_atom, SETUP)
 
 // atomfirmware.h / atombios.h
 static constexpr uint8_t kPhyUniphyA = 0;            // ATOM_PHY_ID_UNIPHYA (phy_id_to_atom, TRANSMITTER_UNIPHY_A)
@@ -107,6 +112,22 @@ inline void setPixelClock(uint8_t out[kCmdBytes], Signal s, uint32_t pixelKhz) {
     d[7] = 0;
     d[8] = kCrtc1;
     d[9] = 0;
+}
+
+// dig_encoder_stream_setup_parameters_v1_5 at byte 4:
+//   +0 digid, +1 action, +2 digmode, +3 lanenum, +4 pclk_10khz (u32), +8 bitpercolor, +9 dplinkrate_270mhz
+// enc314_stream_encoder_hdmi_set_stream_attribute / _dvi_: action SETUP, engine_id = the stream encoder (DIG FE 0 =
+// ENGINE_ID_DIGA = 0), pixel_clock = actual_pix_clk_khz (HDMI) or pix_clk_100hz / 10 (DVI), lanes 4. The callers leave
+// color_depth COLOR_DEPTH_UNDEFINED, so encoder_control_digx_v1_5's switch leaves bitpercolor 0 and pclk unscaled.
+inline void encoderStreamSetup(uint8_t out[kCmdBytes], Signal s, uint32_t pixelKhz) {
+    memset(out, 0, kCmdBytes);
+    put32(out, header(kSubDigxEncoderControl, kPayloadEncoder));
+    uint8_t *d = out + 4;
+    d[0] = 0;
+    d[1] = kEncoderCmdStreamSetup;
+    d[2] = s == Signal::Hdmi ? kDigModeHdmi : kDigModeDvi;
+    d[3] = 4;
+    put32(d + 4, pixelKhz / 10);
 }
 
 } // namespace phxdmubcmd

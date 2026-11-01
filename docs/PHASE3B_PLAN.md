@@ -183,13 +183,15 @@ DMCUB runs the driver's firmware since Test J, so these commands can now be sent
 
 ### 4e (cont). The commands, field by field (`src/amd/phx_dmub_vbios_cmd.h`, tested in `tests/test_phx_dmub_vbios_cmd.cpp`)
 
-Only two of the three are on the HDMI path. The stream encoder is programmed by register writes
-(`enc314_stream_encoder_hdmi_set_stream_attribute`), not by the encoder control command.
+All three are on the HDMI path. DCN 3.1.4's debug defaults set `dmub_command_table` and leave
+`avoid_vbios_exec_table` 0, so `enc314_stream_encoder_hdmi_set_stream_attribute` sends the encoder STREAM_SETUP command
+rather than taking its register-only branch.
 
 | Command | Linux caller | Fields for the 8500G's HDMI port |
 |---|---|---|
 | `DIG1_TRANSMITTER_CONTROL` v1.7, ENABLE | `dcn10_link_encoder_enable_tmds_output` (from `enable_link_hdmi`) | phyid 0 (UNIPHY A), action 1, digmode 3 HDMI (2 DVI), lanes 4, symclk_10khz = phy_pix_clk kHz / 10, hpdsel 1, digfe_sel 0, connobj_id 0 (not set by the caller), HPO_instance 0xF6 |
 | `DIG1_TRANSMITTER_CONTROL` v1.7, DISABLE | `dcn10_link_encoder_disable_output` | phyid 0, action 0, digmode, hpdsel 1, connobj_id 0x0C, HPO_instance 0xF6, lanes/clock 0 |
+| `DIGX_ENCODER_CONTROL` v1.5, STREAM_SETUP | `enc314_stream_encoder_hdmi_set_stream_attribute` | digid 0 (DIG FE 0), action 0x0F, digmode 3, lanes 4, pclk_10khz = pixel kHz / 10, bitpercolor 0 (the caller leaves color_depth undefined) |
 | `SET_PIXEL_CLOCK` v7 | `dcn31_program_pix_clk` (HDMI/DVI branch) | pixclk_100hz = pixel kHz × 10 (8 bpc: no deep-colour scaling), pll_id 20 (COMBOPHY_PLL0: first free PLL), encoderobjid 0x1E, encoder_mode 3/2, miscinfo 0 (XTALIN ref = 0x00), crtc_id 0, deep_color_ratio 0 |
 
 Header: type 128 (`DMUB_CMD__VBIOS`), sub_type 1/2, payload_bytes 60/16. The test checks each command byte-for-byte

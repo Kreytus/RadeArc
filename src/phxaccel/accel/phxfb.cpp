@@ -20,6 +20,7 @@
 #include <sys/sysctl.h>
 #include "nvrm_vram_abi.h"
 #include "nvrm_gpuva_abi.h"
+#include "phx_dcn_pipe.h"
 
 void phxAgdcInstall();   // phxagdc.cpp: the AppleGraphicsDeviceControl that reports this panel (debug.phxagdc)
 void phxAgdcRemove();
@@ -75,6 +76,10 @@ class PhxAMDFB : public IOFramebuffer {
     static constexpr uint64_t kFrameNs = 16666667ull;   // 60 Hz, when the refresh cannot be measured
     uint64_t fFrameNs = kFrameNs;
     uint32_t fRefreshMilliHz = 60000, fHTotal = 0, fVTotal = 0;
+    // The pipe the firmware lit (phx_dcn_pipe.h): its OTG, the DIG back end driving it and that DIG's signal. DVI/HDMI is
+    // an external display; DP (eDP or an external port) keeps the built-in panel the 780M machines have.
+    phxdcn::Pipe fPipe;
+    bool external() const { return fPipe.external(); }
     static constexpr unsigned kBootHoldSec = 120;   // the boot daemon releases it sooner (debug.phxfb_hold=0)
     // The accelerator is NullMoth's, written against an NVIDIA RM: it backs each IOAccel surface with "VRAM" from the
     // framebuffer (nvAllocVram) and a GPU address from the RM (nvGpuVaAlloc/Map). On the 780M nothing on the GPU reads
@@ -231,27 +236,34 @@ class PhxAMDFB : public IOFramebuffer {
 
     // The firmware lit the panel at its native refresh, which the VBL timer and the mode must report: they said 60 Hz while
     // the panel scanned at 120 (OTG frame counter: 392 frames in 3.28 s), and WindowServer composited at 60 fps (2026-10-20).
-    // Read-only: OTG0's H/V totals (DCN 3.1.4: segment 2 base 0x34c0 + 0x1b2a / 0x1b2f) and its frame counter (+0x1b4c)
-    // over ~200 ms, snapped to a standard rate when within 2 %.
+    // Read-only: the running OTG's H/V totals and its frame counter over ~200 ms, snapped to a standard rate when within
+    // 2 %.
     void measureRefresh() {
         IOMemoryMap *mm = fPCI ? fPCI->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress5) : nullptr;
-        if (!mm || mm->getLength() < 0x5100u * 4) { OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
+        if (!mm || mm->getLength() < (uint64_t)(phxdcn::kHighestReg + 1) * 4) {   // BAR5 is 512 KiB OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
         volatile uint32_t *r = (volatile uint32_t *)mm->getVirtualAddress();
-        const uint32_t ctl = r[0x34c0 + 0x1b41], ht = r[0x34c0 + 0x1b2a] + 1, vt = r[0x34c0 + 0x1b2f] + 1;
-        const uint32_t c0 = r[0x34c0 + 0x1b4c] & 0xffffff; const uint64_t t0 = mach_absolute_time();
+        using namespace phxdcn;
+        fPipe = pipe([r](uint32_t reg) { return r[reg]; });
+        if (fPipe.otg < 0) { mm->release(); PFBLOG("pipe: no OTG running: built-in panel, 60 Hz assumed"); return; }
+        if (fPipe.dig < 0) PFBLOG("pipe: OTG%d, no enabled DIG takes it: built-in panel assumed", fPipe.otg);
+        else PFBLOG("pipe: OTG%d -> DIG%d, signal %s (DIG_MODE %u): %s", fPipe.otg, fPipe.dig, modeName(fPipe.digMode),
+                    fPipe.digMode, external() ? "external display" : "built-in panel (eDP or DP)");
+        const uint32_t o = (uint32_t)fPipe.otg;
+        const uint32_t ht = r[otgReg(o, kOtgHTotal)] + 1, vt = r[otgReg(o, kOtgVTotal)] + 1;
+        const uint32_t c0 = r[otgReg(o, kOtgFrameCount)] & 0xffffff; const uint64_t t0 = mach_absolute_time();
         IOSleep(200);
-        const uint32_t c1 = r[0x34c0 + 0x1b4c] & 0xffffff; const uint64_t t1 = mach_absolute_time();
+        const uint32_t c1 = r[otgReg(o, kOtgFrameCount)] & 0xffffff; const uint64_t t1 = mach_absolute_time();
         mm->release();
         uint64_t ns; absolutetime_to_nanoseconds(t1 - t0, &ns);
         const uint32_t frames = (c1 - c0) & 0xffffff;
-        if (!(ctl & 1) || !ns || frames < 4 || ht < 100 || vt < 100) { PFBLOG("refresh: OTG0 not running (ctl 0x%x, %u frames), 60 Hz assumed", ctl, frames); return; }
+        if (!ns || frames < 4 || ht < 100 || vt < 100) { PFBLOG("refresh: OTG%u not counting (%u frames), 60 Hz assumed", o, frames); return; }
         uint32_t mhz = (uint32_t)(((uint64_t)frames * 1000000000000ull) / ns);
-        static const uint32_t kStd[] = { 48000, 50000, 60000, 75000, 90000, 100000, 120000, 144000, 165000, 240000 };
+        static const uint32_t kStd[] = { 48000, 50000, 60000, 75000, 90000, 100000, 120000, 144000, 165000, 180000, 240000 };
         for (uint32_t k : kStd) if (mhz > k * 49 / 50 && mhz < k * 51 / 50) { mhz = k; break; }
         if (mhz < 24000 || mhz > 360000) { PFBLOG("refresh: %u mHz measured, out of range - 60 Hz assumed", mhz); return; }
         fRefreshMilliHz = mhz; fHTotal = ht; fVTotal = vt;
         fFrameNs = 1000000000000ull / mhz;
-        PFBLOG("refresh: OTG0 %ux%u totals, %u frames in %llu us -> %u.%03u Hz", ht, vt, frames, ns / 1000, mhz / 1000, mhz % 1000);
+        PFBLOG("refresh: OTG%u %ux%u totals, %u frames in %llu us -> %u.%03u Hz", o, ht, vt, frames, ns / 1000, mhz / 1000, mhz % 1000);
     }
 
 public:
@@ -353,7 +365,7 @@ public:
         if (idx != 0 || !value) return kIOReturnBadArgument;
         switch (attr) {
         case kConnectionEnable: case kConnectionCheckEnable: *value = 1; return kIOReturnSuccess;
-        case kConnectionFlags: *value = kIOConnectionBuiltIn; return kIOReturnSuccess;
+        case kConnectionFlags: *value = external() ? 0 : kIOConnectionBuiltIn; return kIOReturnSuccess;
         case kConnectionColorModesSupported: case kConnectionColorMode: *value = 0x00000001; return kIOReturnSuccess;
         case kConnectionColorDepthsSupported: case kConnectionControllerColorDepth: case kConnectionControllerDepthsSupported:
             *value = 0x00000002; return kIOReturnSuccess;
@@ -524,9 +536,13 @@ bool PhxAMDFB::start(IOService *provider)
     if (!IOFramebuffer::start(provider)) { OSSafeReleaseNULL(fSurfMap); return false; }
     fVa = IORangeAllocator::withRange(kVaSize - 1, PAGE_SIZE, 0, IORangeAllocator::kLocking);
     poolInit();
-    setProperty("built-in", kOSBooleanTrue);
     setProperty("PhxFBWidth", fWidth, 32); setProperty("PhxFBHeight", fHeight, 32);   // the AGDC's panel timing reads these
-    measureRefresh();
+    measureRefresh();   // also finds the pipe (phxdcn::pipe): built-in panel or external display
+    setProperty("built-in", external() ? kOSBooleanFalse : kOSBooleanTrue);
+    if (fPipe.dig >= 0) {
+        setProperty("PhxFBOtg", (uint32_t)fPipe.otg, 32); setProperty("PhxFBDig", (uint32_t)fPipe.dig, 32);
+        setProperty("PhxFBDigMode", fPipe.digMode, 32);
+    }
     setProperty("PhxFBRefreshMilliHz", fRefreshMilliHz, 32);
     if (fHTotal) { setProperty("PhxFBHTotal", fHTotal, 32); setProperty("PhxFBVTotal", fVTotal, 32); }   // the AGDC's panel timing
     nanoseconds_to_absolutetime(fFrameNs, &gPhxFrameAbs);

@@ -181,6 +181,28 @@ DMCUB runs the driver's firmware since Test J, so these commands can now be sent
 `bios_parser2.c` reads it. The action sequence and the remaining values come from `dcn10_link_encoder_enable_tmds_output`
 / `link_hwss` and `dcn31` clock source.
 
+### 4e (cont). The commands, field by field (`src/amd/phx_dmub_vbios_cmd.h`, tested in `tests/test_phx_dmub_vbios_cmd.cpp`)
+
+Only two of the three are on the HDMI path. The stream encoder is programmed by register writes
+(`enc314_stream_encoder_hdmi_set_stream_attribute`), not by the encoder control command.
+
+| Command | Linux caller | Fields for the 8500G's HDMI port |
+|---|---|---|
+| `DIG1_TRANSMITTER_CONTROL` v1.7, ENABLE | `dcn10_link_encoder_enable_tmds_output` (from `enable_link_hdmi`) | phyid 0 (UNIPHY A), action 1, digmode 3 HDMI (2 DVI), lanes 4, symclk_10khz = phy_pix_clk kHz / 10, hpdsel 1, digfe_sel 0, connobj_id 0 (not set by the caller), HPO_instance 0xF6 |
+| `DIG1_TRANSMITTER_CONTROL` v1.7, DISABLE | `dcn10_link_encoder_disable_output` | phyid 0, action 0, digmode, hpdsel 1, connobj_id 0x0C, HPO_instance 0xF6, lanes/clock 0 |
+| `SET_PIXEL_CLOCK` v7 | `dcn31_program_pix_clk` (HDMI/DVI branch) | pixclk_100hz = pixel kHz × 10 (8 bpc: no deep-colour scaling), pll_id 20 (COMBOPHY_PLL0: first free PLL), encoderobjid 0x1E, encoder_mode 3/2, miscinfo 0 (XTALIN ref = 0x00), crtc_id 0, deep_color_ratio 0 |
+
+Header: type 128 (`DMUB_CMD__VBIOS`), sub_type 1/2, payload_bytes 60/16. The test checks each command byte-for-byte
+against Linux's own structs copied from dmub_cmd.h/atomfirmware.h and filled the way command_table2.c fills them.
+
+HPO_instance 0xF6 is what Linux sends: `(uint8_t)(hpo_engine_id - ENGINE_ID_HPO_0)` with `hpo_engine_id` left 0 by
+the TMDS callers and `ENGINE_ID_HPO_0` = 10.
+
+Register writes around the PLL command in `dcn31_program_pix_clk`, read at baseline in Test K:
+- `OTG0_PIXEL_RATE_CNTL.PIPE0_DTO_SRC_SEL` = 0 (live: 0)
+- `dce112_program_pixel_clk_resync` writes `PIXCLK_RESYNC_CNTL` deep colour 0 at 8 bpc. To be read in Test L before
+  anything is written.
+
 ## 4f. The HDMI port in the VBIOS connector table (`displayobjectinfo`, data table 22, rev 1.4)
 
 `vbios.rom` at 0x3548, six paths (`atom_display_object_path_v2`, 16 bytes each). **Path 0 is the HDMI port:**

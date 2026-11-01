@@ -1,0 +1,83 @@
+name: Build install package
+
+# One folder for install.sh on the 8500G, without a Mac: upstream nullarc's release package (NullMoth's Metal plugin
+# NVMTLDriver.bundle, which this repository does not build) with every Phoenix-2-aware piece from this repository put in:
+# PhxBringup.kext and PhxAccel.kext and phxctl/mesboot/phxfw (latest green "Build kexts"), Mesa RADV (latest green
+# "Build Mesa RADV"), the boot scripts and install.sh from this commit, and the gc_11_0_4/psp_13_0_11 firmware.
+# Download it from the run's "radearc-package" artifact.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths: [ "install/**", "tools/phxctl/*.sh", "tools/phxctl/local.phxboot.plist", ".github/workflows/build-package.yml" ]
+
+jobs:
+  package:
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Upstream release
+      run: |
+        mkdir -p "$RUNNER_TEMP/up" && cd "$RUNNER_TEMP/up"
+        gh release download --repo luuumi-dev/nullarc --pattern 'nullarc-*.zip'
+        ls -la
+        ditto -x -k nullarc-*.zip .
+        UP=$(ls -d "$RUNNER_TEMP"/up/nullarc-*/ | head -1)
+        echo "UP=$UP" >> "$GITHUB_ENV"
+        echo "upstream: $(basename "$UP")"
+        test -d "$UP/PhxGPU/NVMTLDriver.bundle"
+
+    - name: This repository's builds
+      run: |
+        for w in build-kexts.yml:kexts build-mesa.yml:mesa-radv; do
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "${w%%:*}" --branch main --status success -L 1 \
+               --json databaseId -q '.[0].databaseId')
+          echo "${w##*:} from run $id"
+          gh run download "$id" --repo "$GITHUB_REPOSITORY" --name "${w##*:}" --dir "$RUNNER_TEMP/${w##*:}"
+        done
+        cat "$RUNNER_TEMP/kexts/BUILD.txt" "$RUNNER_TEMP/mesa-radv/BUILD.txt"
+
+    - name: Assemble
+      run: |
+        P="$RUNNER_TEMP/out/radearc-package"
+        mkdir -p "$(dirname "$P")"
+        ditto "$UP" "$P"
+        K="$RUNNER_TEMP/kexts"; M="$RUNNER_TEMP/mesa-radv"
+        rm -rf "$P/EFI/OC/Kexts/PhxBringup.kext" "$P/Library/Extensions/PhxAccel.kext"
+        ditto "$K/PhxBringup.kext" "$P/EFI/OC/Kexts/PhxBringup.kext"
+        ditto "$K/PhxAccel.kext" "$P/Library/Extensions/PhxAccel.kext"
+        cp "$K"/phxctl/phxctl "$K"/phxctl/mesboot "$K"/phxctl/phxfw "$P/gpu/phxctl/"
+        # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
+        cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
+        for f in phxboot.sh full.sh bringup5.sh kinst.sh local.phxboot.plist; do cp "tools/phxctl/$f" "$P/gpu/"; done
+        cp install/install.sh install/uninstall.sh "$P/"
+        cp docs/INSTALL.md docs/TEST_PHOENIX2.md "$P/"
+        bash tools/fetch_test_firmware.sh "$P/gpu/fw"
+        chmod 755 "$P"/install.sh "$P"/uninstall.sh "$P"/gpu/*.sh "$P"/gpu/phxctl/*
+        {
+          echo "RadeArc package ${GITHUB_SHA}"
+          echo "upstream $(basename "$UP")"
+          sed 's/^/kexts: /' "$K/BUILD.txt"; sed 's/^/mesa: /' "$M/BUILD.txt"
+        } > "$P/RADEARC_BUILD.txt"
+        cat "$P/RADEARC_BUILD.txt"
+        # what install.sh --check needs must be there
+        for f in EFI/OC/Kexts/PhxBringup.kext Library/Extensions/PhxAccel.kext PhxGPU/NVMTLDriver.bundle \
+                 PhxGPU/nvmtl/libvulkan_radeon.dylib gpu/phxboot.sh gpu/full.sh gpu/bringup5.sh gpu/kinst.sh \
+                 gpu/phxctl/phxctl gpu/phxctl/mesboot gpu/phxctl/phxfw gpu/local.phxboot.plist \
+                 gpu/fw/gc_11_0_4_mes1.bin gpu/fw/psp_13_0_11_toc.bin; do
+          test -e "$P/$f" || { echo "::error::missing $f"; exit 1; }
+        done
+        plutil -lint "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist"
+        grep -q 0x15c81002 "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist" || { echo "::error::PhxAccel lacks 15C8"; exit 1; }
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: radearc-package
+        path: ${{ runner.temp }}/out/
+        retention-days: 30

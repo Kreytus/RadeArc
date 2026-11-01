@@ -74,6 +74,19 @@ int main() {
         printf("[PASS] test_edid_%u_hz (clock %u kHz: H_TOTAL 0x%x H_BLANK 0x%08x V_TOTAL 0x%x V_BLANK 0x%08x V_SYNC 0x%08x)\n",
                want[i].mhz / 1000, m.pixelKhz, o.hTotal, o.hBlankStartEnd, o.vTotal, o.vBlankStartEnd, o.vSyncA);
     }
+
+    // Test K's logic (tools/phxctl/modecheck.cpp): the EDID walk finds all four modes, and the live OTG0 read from
+    // GOP's registers matches mode 0 exactly and no other
+    Mode ms[16];
+    const int nm = modesFromEdid(e.data(), (uint32_t)e.size(), ms, 16);
+    CHECK(nm == 4);
+    CHECK(ms[0].refreshMilliHz() == 60000 && ms[3].pixelKhz == 415580);
+    auto rdGop = [&](uint32_t a) { auto it = g.find(a); return it == g.end() ? 0u : it->second; };
+    const OtgRegs live = readOtg(rdGop, 0);
+    CHECK(otgDiff(otgRegs(ms[0]), live) == 0);
+    for (int i = 1; i < nm; i++) CHECK(otgDiff(otgRegs(ms[i]), live) != 0);
+    CHECK(otgDiff(otgRegs(ms[3]), live) & (1u << 0));   // H_TOTAL differs at 180 Hz
+    printf("[PASS] test_modecheck (EDID walk: %d modes; GOP's OTG0 = mode 0 only)\n", nm);
     printf("=== All tests PASSED successfully ===\n");
     return 0;
 }

@@ -67,6 +67,9 @@ jobs:
         # Phase 3b Test J: the DMCUB loader, its test script and the 8500G's VBIOS (Phase 0 dump; DMUB window 3)
         cp "$K"/phxctl/dmcubload "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no dmcubload in the kext build yet"
         cp tools/phxctl/testj.sh "$P/"
+        # Phase 3b Test K: the read-only mode check
+        cp "$K"/phxctl/modecheck "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no modecheck in the kext build yet"
+        cp tools/phxctl/testk.sh "$P/"
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"

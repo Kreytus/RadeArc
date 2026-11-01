@@ -226,3 +226,20 @@ does not depend on it. A reboot gives GOP's DMCUB back.
   - dmcubload then set up the windows at VRAM 208 MiB and started DMCUB. `SCRATCH0` became 0x3 (`dal_fw` 1,
     `mailbox_rdy` 1), and a `DMUB_CMD__NULL` through inbox 1 was consumed (RPTR 64).
   - The picture was not affected.
+
+## Test K: the mode check (read-only, Phase 3b)
+
+From the newest install package (with `testk.sh` in its top folder), unpacked on the Desktop:
+
+```bash
+cd ~/Desktop/radearc-package && bash testk.sh
+```
+
+Nothing is written to the GPU, and no reboot is needed. Needs `-phxp2 phxdebug=1` for the EDID read. Expected in
+`~/Desktop/testk.txt`:
+- `== EDID ...: 256 bytes, 4 detailed timings` (60, 144, 165, 180 Hz)
+- `== pipe: OTG0 -> DIG FE 0 -> DIG BE 0, signal DVI` (GOP drives HDMI as DVI: DIG_MODE 2)
+- eight `ok` lines, then `timing: MATCH mode 0 (60 Hz)`
+- `refresh: measured 60.0xx Hz`
+- the DIG / DCCG / HUBBUB register dump (the baseline for Tests L/M), then the planned 144/165/180 Hz OTG values
+- `modecheck exit 0`

@@ -68,4 +68,51 @@ inline bool modeFromDtd(const uint8_t d[18], Mode *m) {
     return true;
 }
 
+// Every detailed timing in an EDID: block 0's four descriptors, then each CEA-861 extension's DTDs (byte 2 = DTD
+// offset, 18-byte descriptors until a zero pixel clock or the checksum byte), as Linux drm_edid.c walks them
+// (drm_for_each_detailed_block: the base block, then cea_db / cea_detailed_timings). Returns the count stored.
+inline int modesFromEdid(const uint8_t *e, uint32_t len, Mode *out, int max) {
+    int n = 0;
+    if (len < 128) return 0;
+    for (uint32_t o = 54; o + 18 <= 126 && n < max; o += 18)
+        if (modeFromDtd(e + o, &out[n])) n++;
+    const uint32_t blocks = len / 128;
+    for (uint32_t b = 1; b < blocks && b <= e[126]; b++) {
+        const uint8_t *x = e + 128 * b;
+        if (x[0] != 0x02 || x[2] < 4) continue;   // CEA extension tag 0x02; byte 2 = 0..3: no DTDs
+        for (uint32_t o = x[2]; o + 18 <= 127 && n < max; o += 18)
+            if (!modeFromDtd(x + o, &out[n])) break; else n++;
+    }
+    return n;
+}
+
+// The live OTG timing registers of OTG n, masked to the fields otgRegs computes (so a diff means a real difference).
+static constexpr uint32_t kDmuSeg2 = 0x34c0, kOtgStride = 0x80;
+template <typename Rd> OtgRegs readOtg(Rd rd, uint32_t otg) {
+    auto R = [&](uint32_t reg) { return rd(kDmuSeg2 + reg + otg * kOtgStride); };
+    OtgRegs r{};
+    r.hTotal = R(kOtgHTotal) & 0x7fff;
+    r.hBlankStartEnd = R(kOtgHBlankStartEnd) & 0x7fff7fff;
+    r.hSyncA = R(kOtgHSyncA) & 0x7fff7fff;
+    r.hSyncPol = R(kOtgHSyncACntl) & 1;
+    r.vTotal = R(kOtgVTotal) & 0x7fff;
+    r.vBlankStartEnd = R(kOtgVBlankStartEnd) & 0x7fff7fff;
+    r.vSyncA = R(kOtgVSyncA) & 0x7fff7fff;
+    r.vSyncPol = R(kOtgVSyncACntl) & 1;
+    return r;
+}
+
+// Which fields differ (bit i = field i in OtgRegs order); 0 = identical.
+inline uint32_t otgDiff(const OtgRegs &a, const OtgRegs &b) {
+    const uint32_t x[8] = {a.hTotal, a.hBlankStartEnd, a.hSyncA, a.hSyncPol, a.vTotal, a.vBlankStartEnd, a.vSyncA, a.vSyncPol};
+    const uint32_t y[8] = {b.hTotal, b.hBlankStartEnd, b.hSyncA, b.hSyncPol, b.vTotal, b.vBlankStartEnd, b.vSyncA, b.vSyncPol};
+    uint32_t m = 0;
+    for (int i = 0; i < 8; i++) if (x[i] != y[i]) m |= 1u << i;
+    return m;
+}
+static const char *const kOtgFieldNames[8] = {"OTG_H_TOTAL", "OTG_H_BLANK_START_END", "OTG_H_SYNC_A", "OTG_H_SYNC_A_POL",
+                                              "OTG_V_TOTAL", "OTG_V_BLANK_START_END", "OTG_V_SYNC_A", "OTG_V_SYNC_A_POL"};
+static const uint32_t kOtgFieldRegs[8] = {kOtgHTotal, kOtgHBlankStartEnd, kOtgHSyncA, kOtgHSyncACntl,
+                                          kOtgVTotal, kOtgVBlankStartEnd, kOtgVSyncA, kOtgVSyncACntl};
+
 } // namespace phxtiming

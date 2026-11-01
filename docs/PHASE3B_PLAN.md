@@ -245,7 +245,7 @@ EDID on DDC1) agrees with the VBIOS. No hardware dump needed for this step.
 |---|---|---|
 | I | 4a: DMCUB state (`dmcub.txt`) | no |
 | J | DMCUB: load and start the driver's DMUB firmware as Linux does (`dal_fw` = 1, GOP picture stays) | yes |
-| K | Encoding check under macOS: computed 60 Hz register set vs live registers and Phase 0's Linux `dm_dtn_log` | no |
+| K | `testk.sh` / `modecheck`: the OTG timing computed from the EDID's 60 Hz mode vs the live OTG registers, the measured refresh, and a baseline dump of the DIG/HDMI, DCCG and HUBBUB registers Tests L/M change | no |
 | L | 144 Hz switch with automatic revert (`-phxmodeset`) | yes |
 | M | 165 Hz and 180 Hz with scrambling + SCDC | yes |
 

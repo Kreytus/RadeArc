@@ -105,3 +105,13 @@ Expected: a `mesboot: chip Phoenix 2, VRAM MC 0x8000000000 size 2048 MiB, FB phy
 `gfx: scratch1=0xdeadbeef (want deadbeef) testbuf=0x6f7a6f7a (want 6f7a6f7a) ...`: the values must equal the "want" ones.
 
 Send me `~/gpu/test-c.log`. After that, remove `-phxp2` again until we go on.
+
+## Results on the B650M D3HP AX + Ryzen 5 8500G (build 35)
+
+- **Test A, passed:** chip Phoenix 2, gc 11.0.4 (720900), UMA 2 GiB at 0x3E0000000; the PSP stays refused while read-only.
+- **Test B, passed:** LOAD_TOC returned tmr_size 0x4a00000 (the same size Linux uses) and SETUP_TMR status 0. All 17
+  LOAD_IP_FW loads returned status 0, as did AUTOLOAD_RLC. The SMU accepted 0x3, 0x2 (PMFW 0x004c6700) and
+  EnableGfxImu. RLC_RLCS_BOOTLOAD_STATUS = 0xc000001f (complete), and GB_ADDR_CONFIG reads 0x142 live.
+- **Test C, passed:** the MES SET_HW_RESOURCES, QUERY_SCHED_STATUS and both ADD_QUEUE calls returned OK. The compute
+  queue gave scratch0=0xdeadbeef and testbuf=0xfeedf00d, the gfx queue gave scratch1=0xdeadbeef and testbuf=0x6f7a6f7a,
+  and both queues were adopted (kr 0).

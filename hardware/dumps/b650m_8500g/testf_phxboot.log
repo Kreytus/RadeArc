@@ -1,0 +1,9 @@
+== 2026-11-01 11:06:36 phxboot
+PhxAMDFB on the panel: 0
+compute: scratch0=0xdeadbeef (want deadbeef) testbuf=0xfeedf00d (want feedf00d) hqd_active=1 rptr=8
+adopt queue -> kr 0x0
+gfx: scratch1=0xdeadbeef (want deadbeef) testbuf=0x6f7a6f7a (want 6f7a6f7a) rptr=0 rptr_wb=968 grbm=0xa800302c cp_stat=0x00000000
+adopt gfx queue -> kr 0x0
+mesboot: chip Phoenix 2, VRAM MC 0x8000000000 size 2048 MiB, FB phys 0x3e0000000, aperture 0x200000..0x201fff, scratch 0x3e3fff000
+claim -> kr 0x0
+done 11:06:46

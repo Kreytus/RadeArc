@@ -179,3 +179,8 @@ reboot, or boot-arg `-phxoff`.
   2200×1125: the mode GOP set), 144 Hz (335.77 MHz), 165 Hz (384.73 MHz) and **180 Hz (415.58 MHz, totals
   2080×1110)**. The range limits allow 48–180 Hz. Phase 3b note: 415.58 MHz is above 340 MHz, so 180 Hz over HDMI
   needs HDMI 2.0 TMDS scrambling (SCDC). The monitor's HF-VSDB advertises it (max TMDS 600 MHz, SCDC present).
+- **Test F, passed** (radearc-package at f38b483: upstream 0.3.0-alpha, PhxBringup build 36). install.sh passed every
+  check, and PhxAccel went into the Aux KC (`kmutil rc=0`). At boot, phxboot brought the GPU up and both queues
+  answered, then `claim -> kr 0x0` and `done` 10 s after start. 60 s later the headless check restored MetalPluginName.
+  System Information shows **AMD Radeon 740M, Metal Support: Metal 3**. RADV opened `canned phoenix2` through the
+  plugin. The desktop stays on IONDRVFramebuffer (not armed). Logs: `hardware/dumps/b650m_8500g/testf_*.txt|log`.

@@ -1,0 +1,34 @@
+Sun Nov  1 11:11:47 EET 2026
+radv-darwin: native kext: ABI 1.12, build 36, VMID 8, max 64 IBs/submit, canned phoenix2, GB_ADDR_CONFIG 0x00000142, VRAM 256 MiB visible + 1536 MiB hi, GTT cap 512 MiB
+Graphics/Displays:
+
+    AMD Radeon 740M:
+
+      Chipset Model: AMD Radeon 740M
+      Type: GPU
+      Bus: PCIe
+      PCIe Lane Width: x16
+      VRAM (Total): 2 GB
+      Vendor: AMD (0x1002)
+      Device ID: 0x15c8
+      Revision ID: 0x00c5
+      Metal Support: Metal 3
+      Displays:
+        Display:
+          Resolution: 1920 x 1080 (1080p FHD - Full High Definition)
+          UI Looks like: 1920 x 1080
+          Framebuffer Depth: 24-Bit Color (ARGB8888)
+          Main Display: Yes
+          Mirror: Off
+          Online: Yes
+
+      "MetalPluginName" = "../../../Library/GPUBundles/NVMTLDriver"
+      "NVAccelHeadless" = Yes
+2026-11-01 11:06:45.691769+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: registerService() called — Metal can now find MetalPluginName=NVMTLDriver
+2026-11-01 11:06:45.691771+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: registerService() called — Metal can now find MetalPluginName=NVMTLDriver
+2026-11-01 11:06:45.692174+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: MetalPluginName withheld -- nothing will load the Metal plugin until `sysctl -w debug.nvaccelfb=1` puts it back, and a reboot takes it away again
+2026-11-01 11:06:45.692176+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: MetalPluginName withheld -- nothing will load the Metal plugin until `sysctl -w debug.nvaccelfb=1` puts it back, and a reboot takes it away again
+2026-11-01 11:06:45.692180+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: headless check: armed for 60 s from now
+2026-11-01 11:06:45.692181+0200 0x1201     Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: headless check: armed for 60 s from now
+2026-11-01 11:07:45.692941+0200 0x1c7      Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: headless check: no NVIDIA display head after 60 s -- MetalPluginName restored WITHOUT arming: apps get the NVIDIA Metal device, WindowServer stays on the display's GPU (IONDRVFramebuffer)
+2026-11-01 11:07:45.692948+0200 0x1c7      Default     0x0                  0      0    kernel: (PhxAccel) NMXAccel: headless check: no NVIDIA display head after 60 s -- MetalPluginName restored WITHOUT arming: apps get the NVIDIA Metal device, WindowServer stays on the display's GPU (IONDRVFramebuffer)

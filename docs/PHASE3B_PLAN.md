@@ -160,6 +160,27 @@ Test J then checks three things: `dal_fw` = 1, the picture unchanged, and one DM
 (`DMUB_CMD__NULL`, `dmub_cmd.h`) completed through inbox 1. If it fails: DMCUB stays in reset and the GOP picture keeps
 running, because the OTG/DIG are untouched. A reboot restores GOP's DMCUB.
 
+## 4e. Which DMUB VBIOS commands, which versions (from the 8500G's VBIOS)
+
+`hardware/dumps/b650m_8500g/vbios.rom`: the ATOM ROM header (2.3) sits at 0x194; the master command list (2.1) at
+0x39d0 has only entries 0, 6, 22, 53 and 66 (asic_init and internal functions). `digxencodercontrol` (index 4),
+`setpixelclock` (12), `enabledisppowergating` (13) and `dig1transmittercontrol` (76) are **absent**. So
+`BIOS_CMD_TABLE_PARA_REVISION` returns 0, and `command_table2.c` takes its fallbacks, which with
+`dmub_command_table` always send to DMCUB:
+- `encoder_control_fallback` → `encoder_control_digx_v1_5` → `DMUB_CMD__VBIOS_DIGX_ENCODER_CONTROL`
+  (`dig_encoder_stream_setup_parameters_v1_5`: digid, action, pclk_10khz, digmode, lanenum, bitpercolor)
+- `transmitter_control_fallback` → `transmitter_control_v1_7` → `DMUB_CMD__VBIOS_DIG1_TRANSMITTER_CONTROL`
+  (`dmub_dig_transmitter_control_data_v1_7`: phyid, action, digmode, lanenum, hpdsel, digfe_sel, connobj_id,
+  symclk_10khz)
+- `set_pixel_clock_fallback` → `set_pixel_clock_v7` → `DMUB_CMD__VBIOS_SET_PIXEL_CLOCK`
+  (`set_pixel_clock_parameter_v1_7`: crtc_id, pll_id, encoderobjid, encoder_mode, pixclk_100hz, deep_color_ratio,
+  miscinfo)
+
+DMCUB runs the driver's firmware since Test J, so these commands can now be sent. The connector-dependent fields
+(phyid, hpdsel, connobj_id, encoder object id) come from the VBIOS `displayobjectinfo` data table (present) as
+`bios_parser2.c` reads it. The action sequence and the remaining values come from `dcn10_link_encoder_enable_tmds_output`
+/ `link_hwss` and `dcn31` clock source.
+
 ## 5. macOS implementation design (after 4a–4c)
 
 - **Where:** a header-only `src/amd/phx_dcn_modeset.h` (pure sequence over `rd`/`wr`/`delayUs`/`smu`/`dmub` callbacks,

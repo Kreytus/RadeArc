@@ -243,3 +243,17 @@ Nothing is written to the GPU, and no reboot is needed. Needs `-phxp2 phxdebug=1
 - `refresh: measured 60.0xx Hz`
 - the DIG / DCCG / HUBBUB register dump (the baseline for Tests L/M), then the planned 144/165/180 Hz OTG values
 - `modecheck exit 0`
+
+**Test K, passed** (package 9bdad1f, `hardware/dumps/b650m_8500g/testk.txt`):
+- EDID: 4 detailed timings (60, 144.003, 165.001, 179.998 Hz). Pipe OTG0 → DIG FE 0 → BE 0, DVI.
+- All eight OTG0 timing fields equal optc1_program_timing for the 60 Hz mode (`timing: MATCH mode 0`); refresh
+  measured 59.7 Hz (60 frames in 1.005 s: one-frame quantisation of a 1 s window).
+- Baseline decoded with dcn_3_1_4_sh_mask.h:
+  - `DIG0_DIG_BE_CNTL` 0x00020100: DIG_MODE 2 (DVI), FE_SOURCE_SELECT FE0, DIG_HPD_SELECT 0 (= HPD1, as the VBIOS says)
+  - `DIG0_DIG_FE_CNTL` 0x01000000: SOURCE OTG0, DIG_SYMCLK_FE_ON 1, TMDS_PIXEL_ENCODING 0 (RGB 4:4:4)
+  - `DIG0_HDMI_CONTROL` 0x00010011: KEEPOUT_MODE 1, PACKET_GEN_VERSION 1, UNSCRAMBLED_CONTROL_LINE_NUM 1,
+    **DATA_SCRAMBLE_EN 0, CLOCK_CHANNEL_RATE 0** (to be 1/1 above 340 MHz: 165/180 Hz)
+  - `DIG0_DIG_BE_EN_CNTL` 0x101: DIG_ENABLE, SYMCLK_BE_ON; `DIG0_TMDS_CNTL` 1: TMDS_SYNC_PHASE
+  - DCCG: `OTG0_PIXEL_RATE_CNTL` and the PHY/HDMI clock controls are 0: no DTO; the TMDS pixel clock comes from the
+    PHY PLL, which the DMUB SET_PIXEL_CLOCK command programs
+  - HUBBUB watermarks A: urgency 0x9c, SR enter 0x19b, SR exit 0x153, DRAM clock change 0x69c

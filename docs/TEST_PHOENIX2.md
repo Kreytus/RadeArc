@@ -136,3 +136,7 @@ Send me `testd.txt`. After that, remove `-phxp2` again.
 - **Test C, passed:** the MES SET_HW_RESOURCES, QUERY_SCHED_STATUS and both ADD_QUEUE calls returned OK. The compute
   queue gave scratch0=0xdeadbeef and testbuf=0xfeedf00d, the gfx queue gave scratch1=0xdeadbeef and testbuf=0x6f7a6f7a,
   and both queues were adopted (kr 0).
+- **Test D, passed** (mesa-radv from RadeArc 3a1ba84): RADV chose `canned phoenix2` (GB_ADDR_CONFIG 0x142) on its own,
+  from the kext's GC 11.0.4. The device was `AMD Radeon 740M Graphics (RADV PHOENIX2) 1002:15c8`. ACO compiled the
+  compute pipeline, the dispatch ran on the GPU with its fence signalled, results were **256/256 correct**, and the
+  watchdog was cancelled.

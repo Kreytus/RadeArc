@@ -1,0 +1,87 @@
+name: Build Mesa RADV
+
+# Builds libvulkan_radeon.dylib (Mesa RADV with the Darwin backend) for x86_64 macOS from the pinned Mesa commit,
+# Cobalt64's Darwin patches and mesa-patches-phoenix, so no Mac is needed. Then checks it without a GPU: the in-process
+# mock kext pretends to be each chip (RADV_DARWIN_MOCK_GC = its GC IP version) and vkprobe must see the right device
+# and compile a compute pipeline with ACO. Download the dylib from the run's "mesa-radv" artifact.
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "mesa-patches-phoenix/**", "tools/vkprobe/**", ".github/workflows/build-mesa.yml" ]
+  workflow_dispatch:
+
+env:
+  MESA_COMMIT: f5cb8ee032adabef599ae892ec4e42d796b84da9   # mesa-patches-phoenix/README.txt
+  COBALT64_COMMIT: d1f7bad8408a0a2c016b067c477422975a59de44
+
+jobs:
+  radv:
+    runs-on: macos-15-intel
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Tools
+      run: |
+        brew install ninja glslang vulkan-loader vulkan-headers
+        python3 -m venv "$RUNNER_TEMP/venv"
+        "$RUNNER_TEMP/venv/bin/pip" install -q meson mako pyyaml packaging
+        echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+    - name: Mesa source + patches
+      run: |
+        git init -q "$RUNNER_TEMP/mesa" && cd "$RUNNER_TEMP/mesa"
+        git config user.email ci@localhost && git config user.name ci
+        git fetch -q --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git "$MESA_COMMIT" ||
+          git fetch -q --depth 1 https://github.com/chaotic-cx/mesa-mirror "$MESA_COMMIT"
+        git checkout -q FETCH_HEAD
+        git clone -q https://github.com/Almosst-DEV/Cobalt64 "$RUNNER_TEMP/Cobalt64"
+        git -C "$RUNNER_TEMP/Cobalt64" checkout -q "$COBALT64_COMMIT"
+        git am -q "$RUNNER_TEMP"/Cobalt64/mesa-patches/*.patch
+        git am -q "$GITHUB_WORKSPACE"/mesa-patches-phoenix/*.patch
+        git log --oneline -17
+
+    - name: Build RADV
+      working-directory: ${{ runner.temp }}/mesa
+      run: |
+        meson setup build --buildtype=release -Dvulkan-drivers=amd -Dgallium-drivers= -Dplatforms= \
+          -Dllvm=disabled -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled \
+          -Dgles2=disabled -Dxmlconfig=disabled -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled \
+          -Dbuild-tests=false -Dvulkan-layers= -Dtools=
+        ninja -C build
+        file build/src/amd/vulkan/libvulkan_radeon.dylib
+
+    - name: vkprobe
+      working-directory: tools/vkprobe
+      run: |
+        glslangValidator -V --vn fill_spv fill.comp -o fill_spv.h
+        clang -O2 -o vkprobe vkprobe.c -I"$(brew --prefix vulkan-headers)/include" \
+          -L"$(brew --prefix vulkan-loader)/lib" -lvulkan -Wl,-rpath,"$(brew --prefix vulkan-loader)/lib"
+
+    - name: Mock check (no GPU)
+      run: |
+        M="$RUNNER_TEMP/mesa/build/src/amd/vulkan/radeon_devenv_icd.x86_64.json"
+        probe() { # $1 = GC version the mock reports, $2 = the device line vkprobe must print
+          out=$(VK_ICD_FILENAMES="$M" RADV_DARWIN_MOCK=1 RADV_DARWIN_MOCK_GC=$1 tools/vkprobe/vkprobe 2>&1); rc=$?
+          echo "$out"
+          [ $rc -eq 0 ] || { echo "::error::vkprobe failed for GC $1"; exit 1; }
+          echo "$out" | grep -qF "$2" || { echo "::error::GC $1: expected '$2'"; exit 1; }
+          echo "$out" | grep -q "compute pipeline compiled" || { echo "::error::GC $1: no pipeline"; exit 1; }
+        }
+        echo "== Phoenix 1 (GC 11.0.1)"
+        probe 0xb0001 "AMD Radeon 780M Graphics (RADV PHOENIX)  vendor 0x1002 device 0x1900"
+        # the runner's CPU brand string names no Radeon, so Phoenix 2 gets Linux's name for 1002:15C8
+        echo "== Phoenix 2 (GC 11.0.4)"
+        probe 0xb0004 "AMD Radeon Graphics (RADV PHOENIX2)  vendor 0x1002 device 0x15c8"
+
+    - name: Package
+      run: |
+        mkdir -p out
+        cp "$RUNNER_TEMP/mesa/build/src/amd/vulkan/libvulkan_radeon.dylib" out/
+        cp tools/vkprobe/vkprobe out/
+        echo "mesa $MESA_COMMIT + Cobalt64 $COBALT64_COMMIT + RadeArc ${GITHUB_SHA}" > out/BUILD.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: mesa-radv
+        path: out/
+        retention-days: 30

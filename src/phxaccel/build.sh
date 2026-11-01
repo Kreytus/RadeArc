@@ -15,7 +15,7 @@ clang++ -arch x86_64 -mmacosx-version-min=11.0 -fapple-kext -mkernel -nostdinc -
   -c "$HERE/accel/nvrm-accel.cpp" -o "$HERE/build/accel.o"
 clang++ -arch x86_64 -mmacosx-version-min=11.0 -fapple-kext -mkernel -nostdinc -I"$MKSDK/Headers" -I"$HERE" \
   -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -std=c++17 -fno-rtti -fno-exceptions -fno-builtin -fno-common -O2 \
-  -Wall -Wno-unused-parameter -Wno-inconsistent-missing-override -c "$HERE/accel/phxfb.cpp" -o "$HERE/build/phxfb.o"
+  -I"$HERE/../amd" -Wall -Wno-unused-parameter -Wno-inconsistent-missing-override -c "$HERE/accel/phxfb.cpp" -o "$HERE/build/phxfb.o"
 clang++ -arch x86_64 -mmacosx-version-min=11.0 -fapple-kext -mkernel -nostdinc -I"$MKSDK/Headers" -I"$HERE" \
   -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -std=c++17 -fno-rtti -fno-exceptions -fno-builtin -fno-common -O2 \
   -Wall -Wno-unused-parameter -Wno-inconsistent-missing-override -c "$HERE/accel/phxagdc.cpp" -o "$HERE/build/phxagdc.o"

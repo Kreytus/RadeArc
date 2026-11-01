@@ -21,6 +21,7 @@
 #include "nvrm_vram_abi.h"
 #include "nvrm_gpuva_abi.h"
 #include "phx_dcn_pipe.h"
+#include "phx_dcn_i2c.h"
 
 void phxAgdcInstall();   // phxagdc.cpp: the AppleGraphicsDeviceControl that reports this panel (debug.phxagdc)
 void phxAgdcRemove();
@@ -80,6 +81,11 @@ class PhxAMDFB : public IOFramebuffer {
     // an external display; DP (eDP or an external port) keeps the built-in panel the 780M machines have.
     phxdcn::Pipe fPipe;
     bool external() const { return fPipe.external(); }
+    // The external monitor's EDID (phx_dcn_i2c.h: DDC1, the DCN hardware I2C engine as Linux drives it), read once at start
+    // for an external pipe and handed to IODisplay through getDDCBlock. Empty: no DDC answer, IODisplay names a generic
+    // display as before.
+    uint8_t fEdid[256] = {};
+    uint32_t fEdidLen = 0;
     static constexpr unsigned kBootHoldSec = 120;   // the boot daemon releases it sooner (debug.phxfb_hold=0)
     // The accelerator is NullMoth's, written against an NVIDIA RM: it backs each IOAccel surface with "VRAM" from the
     // framebuffer (nvAllocVram) and a GPU address from the RM (nvGpuVaAlloc/Map). On the 780M nothing on the GPU reads
@@ -234,6 +240,25 @@ class PhxAMDFB : public IOFramebuffer {
         thread_call_enter_delayed(me->fVblTimer, gVblStaged ? me->fVblNext - lead : me->fVblNext);
     }
 
+    // Thread context (start): MMIO through the BAR5 view, every poll bounded (phx_dcn_i2c.h).
+    void readEdid(volatile uint32_t *r) {
+        struct Hw {
+            volatile uint32_t *r;
+            uint32_t rd(uint32_t reg) { return r[reg]; }
+            void wr(uint32_t reg, uint32_t v) { r[reg] = v; }
+            void delayUs(uint32_t us) { IODelay(us); }
+        } hw{r};
+        const uint32_t res = phxi2c::readEdid(hw, fEdid, &fEdidLen);
+        if (res != phxi2c::kOk) { fEdidLen = 0; PFBLOG("EDID over DDC1: %s", phxi2c::resultName(res)); return; }
+        const uint16_t mfg = (uint16_t)(fEdid[8] << 8 | fEdid[9]);
+        char name[14] = {};
+        for (int d = 54; d < 126; d += 18)
+            if (!fEdid[d] && !fEdid[d + 1] && fEdid[d + 3] == 0xfc)
+                for (int k = 0; k < 13 && fEdid[d + 5 + k] != 0x0a; k++) name[k] = (char)fEdid[d + 5 + k];
+        PFBLOG("EDID over DDC1: %u bytes, %c%c%c product 0x%04x \"%s\"", fEdidLen, '@' + ((mfg >> 10) & 31),
+               '@' + ((mfg >> 5) & 31), '@' + (mfg & 31), fEdid[10] | fEdid[11] << 8, name);
+    }
+
     // The firmware lit the panel at its native refresh, which the VBL timer and the mode must report: they said 60 Hz while
     // the panel scanned at 120 (OTG frame counter: 392 frames in 3.28 s), and WindowServer composited at 60 fps (2026-10-20).
     // Read-only: the running OTG's H/V totals and its frame counter over ~200 ms, snapped to a standard rate when within
@@ -241,7 +266,8 @@ class PhxAMDFB : public IOFramebuffer {
     void measureRefresh() {
         IOMemoryMap *mm = fPCI ? fPCI->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress5) : nullptr;
         // BAR5 is 512 KiB; the highest register read is phxdcn::kHighestReg
-        if (!mm || mm->getLength() < (uint64_t)(phxdcn::kHighestReg + 1) * 4) { OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
+        const uint64_t highest = phxdcn::kHighestReg > phxi2c::kHighestReg ? phxdcn::kHighestReg : phxi2c::kHighestReg;
+        if (!mm || mm->getLength() < (highest + 1) * 4) { OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
         volatile uint32_t *r = (volatile uint32_t *)mm->getVirtualAddress();
         using namespace phxdcn;
         fPipe = pipe([r](uint32_t reg) { return r[reg]; });
@@ -249,6 +275,7 @@ class PhxAMDFB : public IOFramebuffer {
         if (fPipe.dig < 0) PFBLOG("pipe: OTG%d, no enabled DIG takes it: built-in panel assumed", fPipe.otg);
         else PFBLOG("pipe: OTG%d -> DIG%d, signal %s (DIG_MODE %u): %s", fPipe.otg, fPipe.dig, modeName(fPipe.digMode),
                     fPipe.digMode, external() ? "external display" : "built-in panel (eDP or DP)");
+        if (external()) readEdid(r);
         const uint32_t o = (uint32_t)fPipe.otg;
         const uint32_t ht = r[otgReg(o, kOtgHTotal)] + 1, vt = r[otgReg(o, kOtgVTotal)] + 1;
         const uint32_t c0 = r[otgReg(o, kOtgFrameCount)] & 0xffffff; const uint64_t t0 = mach_absolute_time();
@@ -362,7 +389,19 @@ public:
         default: return IOFramebuffer::setAttributeForConnection(idx, attribute, value);
         }
     }
+    // EDID for IODisplay: block 1 = bytes 0..127, block 2 = the CEA extension (IOFramebuffer numbers blocks from 1)
+    bool hasDDCConnect(IOIndex idx) override { return idx == 0 && fEdidLen >= 128; }
+    IOReturn getDDCBlock(IOIndex idx, UInt32 block, IOSelect type, IOOptionBits, UInt8 *data, IOByteCount *length) override {
+        if (idx != 0 || type != kIODDCBlockTypeEDID || !data || !length || block < 1 || block * 128 > fEdidLen)
+            return kIOReturnUnsupported;
+        const IOByteCount n = *length < 128 ? *length : 128;
+        bcopy(fEdid + (block - 1) * 128, data, n);
+        *length = n;
+        return kIOReturnSuccess;
+    }
     IOReturn getAttributeForConnection(IOIndex idx, IOSelect attr, uintptr_t *value) override {
+        if (idx == 0 && attr == kConnectionSupportsHLDDCSense)
+            return fEdidLen >= 128 ? kIOReturnSuccess : kIOReturnUnsupported;
         if (idx != 0 || !value) return kIOReturnBadArgument;
         switch (attr) {
         case kConnectionEnable: case kConnectionCheckEnable: *value = 1; return kIOReturnSuccess;

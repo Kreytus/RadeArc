@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 38u
+#define PHX_KEXT_BUILD 39u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -50,6 +50,27 @@ SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_handles, CTLFLAG_RD | CTLFLAG_LOCKED, (
             "most BO handles one client has held");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_maps, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoPeakMaps, 0,
             "most GPU VA mappings one client has held");
+static unsigned int gHostCapMb = 8192;
+static volatile UInt32 gHostNoMem, gHostWireFail, gVmMapFail, gHostMbNow, gHostMbPeak;
+static volatile SInt64 gHostBytes;
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_cap_mb, CTLFLAG_RW | CTLFLAG_LOCKED, &gHostCapMb, 0,
+            "host-import budget per client, MiB");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_nomem, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostNoMem, 0,
+            "host imports refused: over the per-client budget");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_wire_fail, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostWireFail, 0,
+            "host imports refused: pages could not be wired");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_vmmap_fail, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gVmMapFail, 0,
+            "GPU VA mappings that failed in the page tables");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostMbNow, 0,
+            "host-imported MiB now, all clients");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb_peak, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostMbPeak, 0,
+            "most host-imported MiB at once, all clients");
+static void notePeak(volatile UInt32 *peak, UInt32 v);
+static void hostBytes(SInt64 delta) {
+    const SInt64 now = OSAddAtomic64(delta, &gHostBytes) + delta;
+    gHostMbNow = (UInt32)(now > 0 ? now >> 20 : 0);
+    notePeak(&gHostMbPeak, gHostMbNow);
+}
 static void notePeak(volatile UInt32 *peak, UInt32 v) {
     UInt32 old = *peak;
     while (v > old && !OSCompareAndSwap(old, v, peak))
@@ -79,7 +100,9 @@ static constexpr uint64_t kVisTotal = 256ull << 20;
 static constexpr uint64_t kHiTotal = 1536ull << 20;
 static constexpr uint64_t kGttCap = 512ull << 20;
 static constexpr uint64_t kGttMaxBo = 256ull << 20;
-static constexpr uint64_t kHostCap = 4096ull << 20, kHostMaxBo = 1024ull << 20;   // host imports, per client
+static constexpr uint64_t kHostMaxBo = 1024ull << 20;   // one host import
+// host imports per client: debug.phxbo_host_cap_mb (default 8 GiB). WindowServer imports its IOSurfaces this way; the
+// fixed 4 GiB of builds <= 38 was the likely wall behind its "Failed to allocate MTLTexture" floods (2026-11-01).
 static constexpr uint64_t kVaMask = (1ull << 48) - 1;
 // GPU VA mappings per client. WindowServer on the 740M ran out of the earlier 4096 (with the 4095 BO handles): every
 // MTLTexture allocation failed, 64x64 included, the desktop flickered and WindowServer crashed (2026-11-01).
@@ -410,6 +433,12 @@ void PhxBringup::stop(IOService *provider) {
         sysctl_unregister_oid(&sysctl__debug_phxbo_nomem);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_handles);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_maps);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_cap_mb);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_nomem);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_wire_fail);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_vmmap_fail);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb_peak);
         gSysctlUp = 0;
     }
     clearRing();
@@ -1431,6 +1460,12 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxbo_nomem);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_handles);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_maps);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_cap_mb);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_nomem);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_wire_fail);
+        sysctl_register_oid(&sysctl__debug_phxbo_vmmap_fail);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_mb);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_mb_peak);
     }
     if (type != PHXN_UC_TYPE)
         return kIOReturnBadArgument;
@@ -1762,8 +1797,10 @@ IOReturn IOAccelPhxNativeClient::doBoFree(IOExternalMethodArguments *a) {
 }
 
 void IOAccelPhxNativeClient::boRelease(Bo &b) {
-    if (b.host)
+    if (b.host) {
         b.md->complete();
+        hostBytes(-(SInt64)b.size);
+    }
     b.md->release();
     b = Bo{};
     if (handlesUsed)
@@ -1781,8 +1818,10 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
     const uint64_t va = a->scalarInput[0], size = a->scalarInput[1];
     if (!va || !size || (va & 4095) || (size & 4095) || a->scalarInput[2] || a->scalarInput[3] || !task)
         return kIOReturnBadArgument;
-    if (size > kHostMaxBo || hostUsed + size > kHostCap)
+    if (size > kHostMaxBo || hostUsed + size > ((uint64_t)gHostCapMb << 20)) {
+        OSIncrementAtomic(&gHostNoMem);
         return kIOReturnNoMemory;
+    }
     const uint32_t h = takeHandle();
     if (!h) {
         OSIncrementAtomic(&gBoHandlesFull);
@@ -1793,10 +1832,12 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
         return kIOReturnNoMemory;
     const IOReturn r = md->prepare();
     if (r != kIOReturnSuccess) {
+        OSIncrementAtomic(&gHostWireFail);
         md->release();
         return r;
     }
     hostUsed += size;
+    hostBytes((SInt64)size);
     bos[h] = Bo{md, size, 2, 0, nullptr, true};
     handleTaken();
     a->scalarOutput[0] = h;
@@ -1852,6 +1893,7 @@ IOReturn IOAccelPhxNativeClient::doGemVa(IOExternalMethodArguments *a) {
         if (owner->gpuReady()) {
             const IOReturn r = ensureVmid() ? owner->vmMap(vmid, va, b->md, v->offset_in_bo, v->map_size) : kIOReturnNoResources;
             if (r != kIOReturnSuccess) {
+                OSIncrementAtomic(&gVmMapFail);
                 maps[freei].used = false;
                 mapsUsed--;
                 return r;

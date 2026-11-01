@@ -181,6 +181,19 @@ DMCUB runs the driver's firmware since Test J, so these commands can now be sent
 `bios_parser2.c` reads it. The action sequence and the remaining values come from `dcn10_link_encoder_enable_tmds_output`
 / `link_hwss` and `dcn31` clock source.
 
+## 4f. The HDMI port in the VBIOS connector table (`displayobjectinfo`, data table 22, rev 1.4)
+
+`vbios.rom` at 0x3548, six paths (`atom_display_object_path_v2`, 16 bytes each). **Path 0 is the HDMI port:**
+- connector object 0x340C: type 3 (connector), enum 4, id 0x0C = `CONNECTOR_OBJECT_ID_HDMI_TYPE_A`
+- encoder 0x211E: id 0x1E = `ENCODER_OBJECT_ID_INTERNAL_UNIPHY`, enum 1 = PHY A, matching GOP's live DIG0 → PHY A
+- device_tag 0x0400
+- records: I2C (type 1) id 0x90, the DDC line Test E read; HPD (type 2) pin 0x01
+
+The other paths are DisplayPort connectors (0x31/32/33 13, UNIPHY 0x20/0x21) and one USB-C/misc object (0x7103).
+These values feed `phyid` / `connobj_id` / `encoderobjid` / `hpdsel` of the DMUB commands (4e), converted the way
+`bios_parser2.c` and `command_table_helper2.c` convert them. The HPD pin → HPD source mapping goes through the
+`gpio_pin_lut` data table (index 12, at 0x30f4), as `bios_parser2.c` does.
+
 ## 5. macOS implementation design (after 4a–4c)
 
 - **Where:** a header-only `src/amd/phx_dcn_modeset.h` (pure sequence over `rd`/`wr`/`delayUs`/`smu`/`dmub` callbacks,

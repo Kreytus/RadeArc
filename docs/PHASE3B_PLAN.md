@@ -45,7 +45,8 @@ HF-VSDB advertises max TMDS 600 MHz and SCDC present.
 4. **Display clocks.** 415.58 MHz needs a higher DISPCLK/DPPCLK than GOP's 148.5 MHz mode. Linux requests them from the
    SMU in `dcn314_smu.c`: `VBIOSSMC_MSG_SetDispclkFreq` (0x4) and `VBIOSSMC_MSG_SetDppclkFreq` (0x6), called from
    `dcn314_clk_mgr.c` (`dcn314_update_clocks`). The values come from DC's bandwidth calculation for the mode, not from a
-   table: they are taken from the Linux trace (4b), not computed here.
+   table: they are computed the way `dcn314_update_clocks` / DML compute them and checked against the 60 Hz values
+   live on the 8500G (4b).
 5. **Watermarks and DCHUB arbitration.** A higher refresh rate shortens the time HUBP has to fetch each line. Linux
    programs the watermarks from DML (`dcn314_hwseq.c` and the `hubbub31` functions). Wrong values risk underflow: a
    flickering or black screen, not damage. These values are also taken from the trace.
@@ -95,32 +96,31 @@ driver's. `dmub_dcn31_is_hw_init` therefore returns false. Linux then resets DMC
 itself (`dm_dmub_hw_init` → `dmub_srv_hw_init`) before it sends display commands, so the macOS side does the same.
 **New first step of Phase 3b: load and start the driver's DMCUB firmware as Linux does**, with its own test. The test
 checks that `dal_fw` = 1, that the GOP picture stays up, and that a DMUB no-op command completes. Only then comes any
-mode setting. The Linux trace (4b) records this load too, since amdgpu performs it at module load.
+mode setting. (No Linux trace exists: the load follows `dm_dmub_hw_init` / `dmub_srv_hw_init` from the source.)
 
-### 4b. A Linux trace of the real mode change on this machine
+### 4b. No Linux trace (decision 2026-11-01): verification from macOS instead
 
-A "Phase 0b" kit, like the Phase 0 kit: a live Linux USB, `amdgpu` loaded with DC, then a scripted
-`1920x1080@60 → @144 → @165 → @180 → @60` sequence (`xrandr` or a KMS test client). It records:
-- every display register write, via the `amdgpu_dc_wreg` / `amdgpu_dc_rreg` tracepoints
-  (`amdgpu_dm/amdgpu_dm_trace.h`);
-- every DMUB command sent, via a kprobe on the DC function that submits them (name confirmed against the v6.17 source
-  when the kit is written);
-- every SMU message (`dcn314_smu_send_msg_with_param` arguments);
-- every SCDC transfer (the DDC I2C register writes are part of the trace);
-- before/after `amdgpu_dm_dtn_log` and the DRM state, as Phase 0 did.
+The user will not boot Linux again. The Phase 0 register trace (`trace-dc1`) came out empty because of the early kit's
+tracepoint bug, so no recording of Linux programming the display exists. The sequence is therefore implemented from
+the Linux source alone, and checked on the 8500G without writing:
+- **Encoding check (read-only):** the code computes the full register set (OTG timing, DIG/HDMI, DCCG pixel rate,
+  HUBP/watermark values it would program) for the **current** 1080p60 mode and compares it with the live registers
+  under macOS (GOP's state) and with Linux's own 60 Hz state in Phase 0's `dm_dtn_log`
+  (`hardware/dumps/b650m_8500g/linux_dm_dtn_log.txt`). Any field that differs is explained from the source before
+  anything is written.
+- **DMUB command check:** the `dmub_rb_cmd` structures (transmitter control, encoder control) are built from the
+  Linux structures in `dmub_cmd.h` and the VBIOS data in Phase 0's `vbios.rom` (`hardware/dumps/b650m_8500g/`), and
+  host-tested.
+- **The first real switch is 144 Hz** (below 340 MHz: no scrambling, no SCDC), with the automatic revert.
 
-The trace is the reference that the macOS code is diffed against, the same way `tests/test_rdna3_fw_plan` checks the
-firmware plan byte for byte against `bringup5.sh`.
+### 4c. Confirm the monitor takes 180 Hz
 
-### 4c. Confirm the monitor really takes 180 Hz from this GPU
-
-That happens during 4b: the user confirms the monitor's OSD shows 180 Hz under Linux. If Linux cannot do it, macOS
-will not either.
+The EDID lists 180 Hz with the range limits allowing it; the monitor's OSD confirms the rate during Test M.
 
 ## 5. macOS implementation design (after 4a–4c)
 
 - **Where:** a header-only `src/amd/phx_dcn_modeset.h` (pure sequence over `rd`/`wr`/`delayUs`/`smu`/`dmub` callbacks,
-  like `phx_dcn_i2c.h`), so a host test can run it against the recorded Linux trace and require the same writes in the
+  like `phx_dcn_i2c.h`), so a host test can check it against the 60 Hz state recorded on the 8500G (4b) and require the same values in the
   same order. The kernel side calls it from PhxAMDFB (`setDisplayMode`), in thread context.
 - **Modes offered:** PhxAMDFB's mode list grows from the one GOP mode to the EDID DTDs it can drive (60, 144, 165,
   180 Hz at 1920×1080). Each mode reports its real timing (`getTimingInfoForDisplayMode`), the AGDC link config
@@ -153,8 +153,8 @@ will not either.
 | Test | What | Writes to the GPU? |
 |---|---|---|
 | I | 4a: DMCUB state (`dmcub.txt`) | no |
-| J | 4b: Linux trace of 60→144→165→180→60 (Phase 0b kit, live USB) | Linux only |
-| K | Dry run under macOS: the sequence computes its writes for 144 Hz and logs them; diffed against trace J | no |
+| J | DMCUB: load and start the driver's DMUB firmware as Linux does (`dal_fw` = 1, GOP picture stays) | yes |
+| K | Encoding check under macOS: computed 60 Hz register set vs live registers and Phase 0's Linux `dm_dtn_log` | no |
 | L | 144 Hz switch with automatic revert (`-phxmodeset`) | yes |
 | M | 165 Hz and 180 Hz with scrambling + SCDC | yes |
 

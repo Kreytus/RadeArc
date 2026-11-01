@@ -7,7 +7,8 @@ OUT=$HOME/Desktop/bocheck.txt
     echo "== $(date '+%F %T')"
     ioreg -rc PhxBringup | grep -E '"phx-(build|chip)"'
     sysctl debug 2>/dev/null | grep phxbo
-    log show --last 10m --style compact --predicate 'process == "WindowServer" AND eventMessage CONTAINS "Failed to allocate"' \
-        2>/dev/null | wc -l | sed 's/^/WindowServer allocation failures in the last 10 min: /'
+    L=$(log show --last 10m --style compact --predicate 'process == "WindowServer" AND eventMessage CONTAINS "Failed to allocate"' 2>/dev/null | grep "Failed to allocate")
+    echo "WindowServer allocation failures in the last 10 min: $(printf '%s' "$L" | grep -c .)"
+    printf '%s\n' "$L" | tail -3 | cut -c1-160
 } > "$OUT" 2>&1
 cat "$OUT"

@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 39u
+#define PHX_KEXT_BUILD 40u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -65,6 +65,13 @@ SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb, CTLFLAG_RD | CTLFLAG_LOCKED, (unsig
             "host-imported MiB now, all clients");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb_peak, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostMbPeak, 0,
             "most host-imported MiB at once, all clients");
+static volatile UInt32 gHostReadOnly, gHostWireErr, gHostWireErrRo;
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_readonly, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostReadOnly, 0,
+            "host imports wired read-only (the caller's pages are read-only)");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_wire_err, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostWireErr, 0,
+            "IOReturn of the last read-write wiring that failed");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_wire_err_ro, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostWireErrRo, 0,
+            "IOReturn of the last read-only wiring that failed");
 static void notePeak(volatile UInt32 *peak, UInt32 v);
 static void hostBytes(SInt64 delta) {
     const SInt64 now = OSAddAtomic64(delta, &gHostBytes) + delta;
@@ -159,7 +166,7 @@ public:
     // one GPUVM context (VMID 8..15) per client process: RADV instances allocate VAs independently
     uint32_t vmidAlloc();
     void vmidFree(uint32_t vmid, uint64_t lastSeq);
-    IOReturn vmMap(uint32_t vmid, uint64_t va, IOMemoryDescriptor *md, uint64_t off, uint64_t size);
+    IOReturn vmMap(uint32_t vmid, uint64_t va, IOMemoryDescriptor *md, uint64_t off, uint64_t size, bool writable = true);
     IOReturn vmUnmap(uint32_t vmid, uint64_t va, uint64_t size);
     IOReturn gpuSubmit(uint32_t vmid, bool gfx, const uint64_t *ibVa, const uint32_t *ibDw, uint32_t n, uint64_t *seq);
     uint64_t gpuRetired() const;
@@ -274,6 +281,7 @@ private:
         uint32_t bits;
         uint8_t *kva;             // the kernel's view of the BO; NULL for host imports, which the kernel never reads
         bool host;
+        bool readOnly;            // a host import wired for device reads only (the caller maps those pages read-only)
     };
     struct Map {
         bool used;
@@ -439,6 +447,9 @@ void PhxBringup::stop(IOService *provider) {
         sysctl_unregister_oid(&sysctl__debug_phxbo_vmmap_fail);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb_peak);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_wire_err_ro);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_wire_err);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_readonly);
         gSysctlUp = 0;
     }
     clearRing();
@@ -927,7 +938,9 @@ IOReturn PhxBringup::claimAccel() {
     return kIOReturnSuccess;
 }
 
-IOReturn PhxBringup::vmMap(uint32_t handle, uint64_t va, IOMemoryDescriptor *md, uint64_t off, uint64_t size) {
+IOReturn PhxBringup::vmMap(uint32_t handle, uint64_t va, IOMemoryDescriptor *md, uint64_t off, uint64_t size, bool writable) {
+    // a read-only host import gets no AMDGPU_PTE_WRITEABLE (bit 6, amdgpu_vm.h): the GPU may read it, never write it
+    const uint64_t flags = writable ? kPteSysFlags : (kPteSysFlags & ~(1ull << 6));
     if (!vmCtx(handle))
         return kIOReturnNotReady;
     VmCtx &c = vm[handle - 1];
@@ -941,7 +954,7 @@ IOReturn PhxBringup::vmMap(uint32_t handle, uint64_t va, IOMemoryDescriptor *md,
             r = pa ? kIOReturnNoMemory : kIOReturnVMError;
             break;
         }
-        *pte = (pa & kPtAddrMask) | kPteSysFlags;
+        *pte = (pa & kPtAddrMask) | flags;
         flushLine(pte);
     }
     if (c.hw)   // an unbound context is flushed when it is next bound
@@ -1466,6 +1479,9 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxbo_vmmap_fail);
         sysctl_register_oid(&sysctl__debug_phxbo_host_mb);
         sysctl_register_oid(&sysctl__debug_phxbo_host_mb_peak);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_wire_err_ro);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_wire_err);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_readonly);
     }
     if (type != PHXN_UC_TYPE)
         return kIOReturnBadArgument;
@@ -1827,18 +1843,33 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
         OSIncrementAtomic(&gBoHandlesFull);
         return kIOReturnNoResources;
     }
+    // WindowServer maps other processes' IOSurfaces read-only: wiring those for device writes (InOut) fails, which
+    // build 39 counted 323 times (debug.phxbo_host_wire_fail) as its IOSurface textures failed (2026-11-01). Such
+    // pages are wired for device reads (kIODirectionOut: memory -> device) and GPU-mapped without write permission.
+    bool readOnly = false;
     IOMemoryDescriptor *md = IOMemoryDescriptor::withAddressRange(va, size, kIODirectionInOut, task);
     if (!md)
         return kIOReturnNoMemory;
-    const IOReturn r = md->prepare();
+    IOReturn r = md->prepare();
     if (r != kIOReturnSuccess) {
-        OSIncrementAtomic(&gHostWireFail);
+        gHostWireErr = (UInt32)r;
         md->release();
-        return r;
+        md = IOMemoryDescriptor::withAddressRange(va, size, kIODirectionOut, task);
+        if (!md)
+            return kIOReturnNoMemory;
+        r = md->prepare();
+        if (r != kIOReturnSuccess) {
+            OSIncrementAtomic(&gHostWireFail);
+            gHostWireErrRo = (UInt32)r;
+            md->release();
+            return r;
+        }
+        readOnly = true;
+        OSIncrementAtomic(&gHostReadOnly);
     }
     hostUsed += size;
     hostBytes((SInt64)size);
-    bos[h] = Bo{md, size, 2, 0, nullptr, true};
+    bos[h] = Bo{md, size, 2, 0, nullptr, true, readOnly};
     handleTaken();
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
@@ -1891,7 +1922,7 @@ IOReturn IOAccelPhxNativeClient::doGemVa(IOExternalMethodArguments *a) {
         maps[freei] = Map{true, v->handle, va, v->map_size, v->offset_in_bo, v->flags};
         notePeak(&gBoPeakMaps, ++mapsUsed);
         if (owner->gpuReady()) {
-            const IOReturn r = ensureVmid() ? owner->vmMap(vmid, va, b->md, v->offset_in_bo, v->map_size) : kIOReturnNoResources;
+            const IOReturn r = ensureVmid() ? owner->vmMap(vmid, va, b->md, v->offset_in_bo, v->map_size, !b->readOnly) : kIOReturnNoResources;
             if (r != kIOReturnSuccess) {
                 OSIncrementAtomic(&gVmMapFail);
                 maps[freei].used = false;

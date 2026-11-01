@@ -160,6 +160,32 @@ framebuffer), reboot. Expected: `/var/log/phxboot.log` ends with `done` after th
 Information → Graphics shows the 740M with Metal support. Turn off: `sudo touch /Users/Shared/gpu/phxboot-off` and
 reboot, or boot-arg `-phxoff`.
 
+## Test J: the driver's DMCUB firmware (Phase 3b; no new kext, no EFI change)
+
+From the newest install package (`radearc-package`, with `testj.sh` in its top folder). Unpack it on the Desktop.
+
+```bash
+cd ~/Desktop/radearc-package && bash testj.sh dry
+```
+
+Read-only. `~/Desktop/testj-dry.txt` shows the DMCUB state (`dal_fw 0`, GOP's firmware) and every register and VRAM
+write the load would make (windows at VRAM 208 MiB). Send it before the real run.
+
+```bash
+cd ~/Desktop/radearc-package && bash testj.sh run
+```
+
+The PSP loads `dcn_3_1_4_dmcub.bin` (type 51), then `dmcubload` resets DMCUB, copies the VBIOS, sets up the windows
+and mailbox, and starts it. Expected in `~/Desktop/testj-run.txt`:
+- `loadfw ... fwtype 51 ... status 0x00000000`
+- `auto-load (dmub_srv_wait_for_auto_load): OK, dal_fw 1 mailbox_rdy 1`
+- `NULL command: OK, consumed`
+- the picture unchanged throughout
+- `watchdog cancelled rc=0`
+
+If the PSP refuses (status ≠ 0), dmcubload still runs. Without the driver code DMCUB then stays in reset; the picture
+does not depend on it. A reboot gives GOP's DMCUB back.
+
 ## Results on the B650M D3HP AX + Ryzen 5 8500G (build 35)
 
 - **Test A, passed:** chip Phoenix 2, gc 11.0.4 (720900), UMA 2 GiB at 0x3E0000000; the PSP stays refused while read-only.

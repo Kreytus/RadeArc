@@ -33,6 +33,8 @@ jobs:
         clang++ -arch x86_64 -std=c++17 -O2 -Wall -Wextra -Werror -I../../src/amd -o phxfw phxfw.cpp \
           ../../src/amd/rdna3_ip_discovery.cpp ../../src/amd/rdna3_chip_profile.cpp \
           ../../src/amd/rdna3_ucode_extract.cpp ../../src/amd/rdna3_fw_plan.cpp -framework IOKit -framework CoreFoundation
+        clang++ -arch x86_64 -std=c++17 -O2 -Wall -Wextra -Werror -I../../src/amd -o dmcubload dmcubload.cpp \
+          -framework IOKit -framework CoreFoundation
 
     - name: Check the binaries
       run: |
@@ -43,14 +45,14 @@ jobs:
           plutil -lint "$k/Contents/Info.plist"
         done
         echo "PhxBringup build: $(grep -o 'PHX_KEXT_BUILD [0-9]*' src/phxbringup/PhxBringup.cpp)"
-        for t in phxctl mesboot phxfw; do file tools/phxctl/$t; done
+        for t in phxctl mesboot phxfw dmcubload; do file tools/phxctl/$t; done
 
     - name: Package
       run: |
         mkdir -p out
         ditto src/phxbringup/build/PhxBringup.kext out/PhxBringup.kext
         ditto src/phxaccel/build/PhxAccel.kext out/PhxAccel.kext
-        mkdir -p out/phxctl && cp tools/phxctl/phxctl tools/phxctl/mesboot tools/phxctl/phxfw out/phxctl/
+        mkdir -p out/phxctl && cp tools/phxctl/phxctl tools/phxctl/mesboot tools/phxctl/phxfw tools/phxctl/dmcubload out/phxctl/
         echo "commit ${GITHUB_SHA}" > out/BUILD.txt
 
     - uses: actions/upload-artifact@v4

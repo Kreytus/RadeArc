@@ -14,7 +14,7 @@ on:
     branches: [ main ]
   push:
     branches: [ "main" ]
-    paths: [ "install/**", "tools/phxctl/*.sh", "tools/phxctl/local.phxboot.plist", ".github/workflows/build-package.yml" ]
+    paths: [ "install/**", "tools/phxctl/*.sh", "hardware/dumps/b650m_8500g/vbios.rom", "tools/phxctl/local.phxboot.plist", ".github/workflows/build-package.yml" ]
 
 jobs:
   package:
@@ -64,6 +64,10 @@ jobs:
         ditto "$K/PhxBringup.kext" "$P/EFI/OC/Kexts/PhxBringup.kext"
         ditto "$K/PhxAccel.kext" "$P/Library/Extensions/PhxAccel.kext"
         cp "$K"/phxctl/phxctl "$K"/phxctl/mesboot "$K"/phxctl/phxfw "$P/gpu/phxctl/"
+        # Phase 3b Test J: the DMCUB loader, its test script and the 8500G's VBIOS (Phase 0 dump; DMUB window 3)
+        cp "$K"/phxctl/dmcubload "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no dmcubload in the kext build yet"
+        cp tools/phxctl/testj.sh "$P/"
+        mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
         # WindowServer loads only signed code (ad-hoc is enough)

@@ -49,7 +49,8 @@ HF-VSDB advertises max TMDS 600 MHz and SCDC present.
    live on the 8500G (4b).
 5. **Watermarks and DCHUB arbitration.** A higher refresh rate shortens the time HUBP has to fetch each line. Linux
    programs the watermarks from DML (`dcn314_hwseq.c` and the `hubbub31` functions). Wrong values risk underflow: a
-   flickering or black screen, not damage. These values are also taken from the trace.
+   flickering or black screen, not damage. They are computed as DML computes them and checked against the live 60 Hz
+   values (4b).
 6. **The OTG timing.** `optc31` / `optc1_program_timing` (`dc/optc/dcn31/dcn31_optc.c` and the DCN10 base) programs
    H/V total, blank, sync and polarity. The register offsets already used read-only by `phx_dcn_pipe.h`
    (`regOTG0_OTG_H_TOTAL` …) come from `dcn_3_1_4_offset.h`.
@@ -57,7 +58,7 @@ HF-VSDB advertises max TMDS 600 MHz and SCDC present.
 ## 3. Linux's order for a mode change on an already lit HDMI link
 
 From `dc/link/link_dpms.c` (`link_set_dpms_off` / `link_set_dpms_on`) and `dcn314_hwseq.c`. The exact sequence is
-confirmed against the trace (4b) before any code is written:
+checked against the live 60 Hz state (4b) before any write:
 
 1. Blank and stop the stream: OTG blank, stream encoder off (`enc314_stream_encoder_*`), transmitter disable through
    DMUB.

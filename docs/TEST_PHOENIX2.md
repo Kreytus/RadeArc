@@ -257,3 +257,20 @@ Nothing is written to the GPU, and no reboot is needed. Needs `-phxp2 phxdebug=1
   - DCCG: `OTG0_PIXEL_RATE_CNTL` and the PHY/HDMI clock controls are 0: no DTO; the TMDS pixel clock comes from the
     PHY PLL, which the DMUB SET_PIXEL_CLOCK command programs
   - HUBBUB watermarks A: urgency 0x9c, SR enter 0x19b, SR exit 0x153, DRAM clock change 0x69c
+
+## Test clk: display clocks and the SMU clock table (Phase 3b, DML inputs)
+
+From the newest install package (with `testclk.sh` in its top folder), unpacked on the Desktop:
+
+```bash
+cd ~/Desktop/radearc-package && bash testclk.sh
+```
+
+No reboot. Needs `-phxp2 phxdebug=1`. The picture is not touched: the SMU answers four queries and copies its DPM
+clock table into a free VRAM buffer at 210 MiB (Linux's dcn314 clock manager does the same with frame-buffer memory).
+Expected in `~/Desktop/testclk.txt`:
+- `DENTIST VCO ... kHz`, plus DISPCLK and DPPCLK in kHz (the clocks GOP left)
+- `GetSmuVersion 0x...`, `GetDprefclkFreq` (Linux assumes 600 MHz), `GetFclkFrequency`
+- the DPM table: `levels: dcf N disp/dpp N ...`, then DcfClocks / DispClocks / DppClocks / SocClocks in MHz and the
+  DfPstate rows (FClk / MemClk for the DDR5)
+- `clkinfo exit 0`

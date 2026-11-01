@@ -73,6 +73,7 @@ jobs:
         # Phase 3b: the clocks and the SMU DPM table (DML inputs)
         cp "$K"/phxctl/clkinfo "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no clkinfo in the kext build yet"
         cp tools/phxctl/testclk.sh "$P/"
+        cp tools/phxctl/bocheck.sh "$P/"
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"

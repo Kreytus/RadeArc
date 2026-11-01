@@ -147,6 +147,19 @@ Expected in `teste.txt`: `edid -> kr 0x00000000  result 0 (ok)  256 bytes`, a he
 `000: 00 ff ff ff ff ff ff 00`, then your monitor's manufacturer code and name. Send me `teste.txt` and `edid.bin`.
 After that, remove `-phxp2` again.
 
+## Test F: install, GPU up at every boot, Metal for apps (the screen is not taken over yet)
+
+Package: GitHub → **Actions → Build install package → latest green run → Artifacts → radearc-package**. It holds
+upstream nullarc 0.3.0-alpha (NullMoth's Metal plugin) with this repository's PhxBringup/PhxAccel, phxctl/mesboot/phxfw,
+Mesa RADV (Phoenix 2 table), boot scripts, install.sh and the gc_11_0_4/psp_13_0_11 firmware.
+
+EFI (config.plist): SIP `csr-active-config` 7F080000; boot-args `-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1
+-phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta`; AMFIPass.kext in Kernel → Add; PhxBringup.kext from the
+package. Then `sudo ./install.sh --check`, `sudo ./install.sh` (without --windowserver: the screen stays on the firmware
+framebuffer), reboot. Expected: `/var/log/phxboot.log` ends with `done` after the compute/gfx lines, and System
+Information → Graphics shows the 740M with Metal support. Turn off: `sudo touch /Users/Shared/gpu/phxboot-off` and
+reboot, or boot-arg `-phxoff`.
+
 ## Results on the B650M D3HP AX + Ryzen 5 8500G (build 35)
 
 - **Test A, passed:** chip Phoenix 2, gc 11.0.4 (720900), UMA 2 GiB at 0x3E0000000; the PSP stays refused while read-only.

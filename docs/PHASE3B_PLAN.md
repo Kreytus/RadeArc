@@ -118,6 +118,48 @@ the Linux source alone, and checked on the 8500G without writing:
 
 The EDID lists 180 Hz with the range limits allowing it; the monitor's OSD confirms the rate during Test M.
 
+## 4d. DMCUB load: Linux's exact sequence (implementation recipe for Test J)
+
+From `amdgpu_dm/amdgpu_dm.c` `dm_dmub_hw_init` and `dmub/src/dmub_srv.c` `dmub_srv_hw_init`, with the DCN 3.1 hooks in
+`dmub/src/dmub_dcn31.c` (DCN 3.1.4 uses them):
+
+1. **Stop and reset the running (GOP) firmware:** `dmub_dcn31_reset`. If `DMCUB_CNTL2.DMCUB_SOFT_RESET` is 0, send GPINT
+   `DMUB_GPINT__STOP_FW`, then wait (each wait at most 100000 × 1 µs) for the GPINT ack, for `DMCUB_SCRATCH7 ==
+   DMUB_GPINT__STOP_FW_RESPONSE` and for `DMCUB_CNTL.DMCUB_PWAIT_MODE_STATUS` bit 0. Then, if `DMCUB_ENABLE`: set
+   `DMCUB_CNTL2.DMCUB_SOFT_RESET`, `MMHUBBUB_SOFT_RESET.DMUIF_SOFT_RESET`, clear `DMCUB_ENABLE`, and zero the inbox 1,
+   outbox 1 and outbox 0 pointers. The OTG keeps scanning out during this (on HDMI, DMCUB does not drive the picture),
+   as it does when Linux loads.
+2. **Memory windows in the UMA carve-out:** the sizes from `dmub_srv.c`, each window 1 MiB aligned
+   (`DMUB_FB_ALIGNMENT`):
+   - inst_const (cw0, from the firmware header's `inst_const_bytes` minus PSP header/footer)
+   - stack 128 KiB (`DMUB_STACK_SIZE`), plus context 512 KiB (`DMUB_CONTEXT_SIZE`)
+   - bss/data (`bss_data_bytes`)
+   - VBIOS (cw3, `hardware/dumps/b650m_8500g/vbios.rom` size)
+   - mailbox 2 × `DMUB_RB_SIZE` (cw4)
+   - trace buffer 64 KiB (cw5, `DMUB_TRACE_BUFFER_SIZE`)
+   - fw state 64 KiB (cw6), scratch 1 KiB, IB 1280 B
+
+   Window bases: CW0 0x60000000, CW1 0x61000000, CW3 0x63000000, CW4 0x64000000, CW5 0x65000000, CW6 0x66000000,
+   region 5 0xA0000000.
+3. **Code:** Linux's APUs use `AMDGPU_FW_LOAD_PSP`. The PSP loads `inst_const` of `dcn_3_1_4_dmcub.bin` (the
+   `dmcub_firmware_header_v1_0` gives the offsets), through the same LOAD_IP_FW path PhxBringup already drives for the 17
+   GFX payloads (Test B). The DMUB firmware type comes from `psp_gfx_if.h` when this step is written. The bss/data part
+   and the VBIOS are copied into their windows by the CPU. Mailbox, trace buffer and fw state are zeroed.
+4. **Windows, mailbox, boot options:** `dmub_srv_hw_init` → `dmub_dcn31_setup_windows`
+   (`DMCUB_REGION3_CW3..CW6_{OFFSET,OFFSET_HIGH,BASE_ADDRESS,TOP_ADDRESS}`, `DMCUB_REGION5_*`) and
+   `dmub_dcn31_setup_mailbox` (`DMCUB_INBOX1_BASE_ADDRESS`, `DMCUB_INBOX1_SIZE`). Then
+   `dmub_dcn31_enable_dmub_boot_options` (`DMCUB_SCRATCH14`; DCN 3.1.4: `dpia_supported` = 1 per `dm_dmub_hw_init`).
+   cw0/cw1 are programmed by `dmub_dcn31_backdoor_load` only in the non-PSP path. With the PSP path the PSP sets them;
+   checked from the source when written.
+5. **Start:** `dmub_dcn31_reset_release`: clear `DMUIF_SOFT_RESET`, `DMCUB_SCRATCH15` = `psp_version & 0x001100FF`, set
+   `DMCUB_ENABLE` and `DMCUB_TRACEPORT_EN`, clear `DMCUB_SOFT_RESET`.
+6. **Wait** for the auto-load (`dmub_srv_wait_for_auto_load`, 100 ms) and check `dal_fw` = 1 in `DMCUB_SCRATCH0`
+   (`dmub_dcn31_is_hw_init`).
+
+Test J then checks three things: `dal_fw` = 1, the picture unchanged, and one DMUB no-op command
+(`DMUB_CMD__NULL`, `dmub_cmd.h`) completed through inbox 1. If it fails: DMCUB stays in reset and the GOP picture keeps
+running, because the OTG/DIG are untouched. A reboot restores GOP's DMCUB.
+
 ## 5. macOS implementation design (after 4a–4c)
 
 - **Where:** a header-only `src/amd/phx_dcn_modeset.h` (pure sequence over `rd`/`wr`/`delayUs`/`smu`/`dmub` callbacks,

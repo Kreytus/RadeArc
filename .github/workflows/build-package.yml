@@ -46,8 +46,9 @@ jobs:
     - name: This repository's builds
       run: |
         for w in build-kexts.yml:kexts build-mesa.yml:mesa-radv; do
-          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "${w%%:*}" --branch main --status success -L 1 \
-               --json databaseId -q '.[0].databaseId')
+          # the newest green run by run id (ids only grow; the API's timestamps did not order them: Test G got old kexts)
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "${w%%:*}" --branch main --status success -L 20 \
+               --json databaseId -q 'map(.databaseId) | max')
           echo "${w##*:} from run $id"
           gh run download "$id" --repo "$GITHUB_REPOSITORY" --name "${w##*:}" --dir "$RUNNER_TEMP/${w##*:}"
         done

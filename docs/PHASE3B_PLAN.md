@@ -88,6 +88,15 @@ sudo ~/gpu/phxctl/phxctl regs 0x36b6 0x36a3 0x36aa 0x3696 0x3697 > ~/Desktop/dmc
 - **Not running:** DMCUB has to be loaded first (`dcn_3_1_4_dmcub.bin`, Linux `dm_dmub_hw_init` / `dmub_srv_hw_init`).
   That becomes its own step with its own test, before any mode setting.
 
+**Result (Test I, 2026-11-01, `hardware/dumps/b650m_8500g/dmcub_after_gop.txt`):** `DMCUB_CNTL` = 0x001900c6
+(`DMCUB_ENABLE` set), `DMCUB_SCRATCH0` = 0x2 (`mailbox_rdy` 1, **`dal_fw` 0**: `union dmub_fw_boot_status`,
+`dmub_cmd.h`), inbox 1 read and write pointers both 0x940 (idle). DMCUB runs the firmware GOP/VBIOS started, not the
+driver's. `dmub_dcn31_is_hw_init` therefore returns false. Linux then resets DMCUB and loads `dcn_3_1_4_dmcub.bin`
+itself (`dm_dmub_hw_init` → `dmub_srv_hw_init`) before it sends display commands, so the macOS side does the same.
+**New first step of Phase 3b: load and start the driver's DMCUB firmware as Linux does**, with its own test. The test
+checks that `dal_fw` = 1, that the GOP picture stays up, and that a DMUB no-op command completes. Only then comes any
+mode setting. The Linux trace (4b) records this load too, since amdgpu performs it at module load.
+
 ### 4b. A Linux trace of the real mode change on this machine
 
 A "Phase 0b" kit, like the Phase 0 kit: a live Linux USB, `amdgpu` loaded with DC, then a scripted

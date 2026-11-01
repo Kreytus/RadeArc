@@ -194,6 +194,20 @@ These values feed `phyid` / `connobj_id` / `encoderobjid` / `hpdsel` of the DMUB
 `bios_parser2.c` and `command_table_helper2.c` convert them. The HPD pin → HPD source mapping goes through the
 `gpio_pin_lut` data table (index 12, at 0x30f4), as `bios_parser2.c` does.
 
+**Resolved (2026-11-01, from `vbios.rom`):** `gpio_pin_lut` (rev 2.1, 0x54 bytes, ten `atom_gpio_pin_assignment`):
+
+| gpio_id | data_a_reg_index | bitshift | Linux name (DCN 3.1.4, DMU segment 2 base 0x34c0) |
+|---|---|---|---|
+| 0x01 | 0x5db5 | 0 | `regDC_GPIO_HPD_A` (0x28f5), `DC_GPIO_HPD1_A_MASK` → **HPD1** |
+| 0x02..0x05 | 0x5db5 | 8/16/24/26 | HPD2..HPD5 |
+| 0x90 | 0x5d91 | 8 | `regDC_GPIO_DDC1_A` (0x28d1): DDC1, the line Test E read |
+| 0x91..0x94 | 0x5d95..0x5da1 | 8 | DDC2..DDC5 |
+
+`bios_parser_get_gpio_pin_info` (bios_parser2.c) returns offset = data_a_reg_index, mask = 1 << bitshift; the DC
+gpio layer (`hw_translate` offset_to_id for DCN 3.1) maps 0x5db5 / 0x1 to `GPIO_ID_HPD`, `GPIO_HPD_1`. So the HDMI
+port is **HPD source 1** (index 0 = `HPD_SOURCEID1`), DDC1, PHY A: every live register already seen (DIG0 → PHY A,
+EDID on DDC1) agrees with the VBIOS. No hardware dump needed for this step.
+
 ## 5. macOS implementation design (after 4a–4c)
 
 - **Where:** a header-only `src/amd/phx_dcn_modeset.h` (pure sequence over `rd`/`wr`/`delayUs`/`smu`/`dmub` callbacks,

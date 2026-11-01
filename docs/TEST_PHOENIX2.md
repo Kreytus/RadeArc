@@ -160,3 +160,9 @@ After that, remove `-phxp2` again.
   from the kext's GC 11.0.4. The device was `AMD Radeon 740M Graphics (RADV PHOENIX2) 1002:15c8`. ACO compiled the
   compute pipeline, the dispatch ran on the GPU with its fence signalled, results were **256/256 correct**, and the
   watchdog was cancelled.
+- **Test E, passed** (PhxBringup build 36): EDID read over DDC1 with the hardware I2C engine. `result 0 (ok)`,
+  256 bytes, both block checksums good: **MSI G255F**, week 14 of 2024, EDID 1.3 with one CEA extension. Saved as
+  `hardware/dumps/b650m_8500g/edid_msi_g255f.bin`. Detailed timings: 1920×1080 at 60 Hz (148.5 MHz, totals
+  2200×1125: the mode GOP set), 144 Hz (335.77 MHz), 165 Hz (384.73 MHz) and **180 Hz (415.58 MHz, totals
+  2080×1110)**. The range limits allow 48–180 Hz. Phase 3b note: 415.58 MHz is above 340 MHz, so 180 Hz over HDMI
+  needs HDMI 2.0 TMDS scrambling (SCDC). The monitor's HF-VSDB advertises it (max TMDS 600 MHz, SCDC present).

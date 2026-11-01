@@ -220,3 +220,9 @@ does not depend on it. A reboot gives GOP's DMCUB back.
 - **Test H, passed** (boot-args `-phxfbext -phxfbedid` on package 3890276): the pipe was reported as external with its
   EDID. System Information names the display **MSI G255F** (1920×1080 at 60 Hz), and WindowServer composites on the GPU
   (`frames on the panel 1163`). This reporting is now the default for DVI/HDMI pipes; `-phxfbint` turns it off.
+- **Test J, passed** (package 9c7e325, no kext change). The driver's DMCUB firmware runs:
+  - The PSP accepted LOAD_IP_FW type 51 (`dcn_3_1_4_dmcub.bin`, 350368 bytes) with status 0, after the GFX bring-up.
+    The PSP load itself stopped GOP's DMCUB firmware (afterwards `DMCUB_CNTL2` soft reset 1, `SCRATCH7` 0xDEADDEAD).
+  - dmcubload then set up the windows at VRAM 208 MiB and started DMCUB. `SCRATCH0` became 0x3 (`dal_fw` 1,
+    `mailbox_rdy` 1), and a `DMUB_CMD__NULL` through inbox 1 was consumed (RPTR 64).
+  - The picture was not affected.

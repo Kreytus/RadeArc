@@ -46,7 +46,7 @@ jobs:
         meson setup build --buildtype=release -Dvulkan-drivers=amd -Dgallium-drivers= -Dplatforms= \
           -Dllvm=disabled -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dopengl=false -Dgles1=disabled \
           -Dgles2=disabled -Dxmlconfig=disabled -Dvalgrind=disabled -Dlibunwind=disabled -Dzstd=disabled \
-          -Dbuild-tests=false -Dvulkan-layers= -Dtools=
+          -Dbuild-tests=false -Dvulkan-layers= -Dtools= -Dspirv-tools=disabled
         ninja -C build
         file build/src/amd/vulkan/libvulkan_radeon.dylib
 

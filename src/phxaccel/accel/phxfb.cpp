@@ -80,7 +80,13 @@ class PhxAMDFB : public IOFramebuffer {
     // The pipe the firmware lit (phx_dcn_pipe.h): its OTG, the DIG back end driving it and that DIG's signal. DVI/HDMI is
     // an external display; DP (eDP or an external port) keeps the built-in panel the 780M machines have.
     phxdcn::Pipe fPipe;
-    bool external() const { return fPipe.external(); }
+    // What WindowServer is told. Test G (8500G, MSI G255F over HDMI/DVI, 2026-11-01): reported as an external display
+    // with its EDID, CoreDisplay made display ID 0 for it and asserted in CoreDisplay_CreateDisplayForCGXDisplayDevice
+    // three times. Upstream's 780M (built-in, no EDID) composites fine. So by default the pipe is presented the upstream
+    // way whatever it is, and the two Phase 3a reports are opt-in for testing: boot-arg -phxfbext (external connection)
+    // and -phxfbedid (EDID to IODisplay). The pipe and EDID are still read and logged.
+    bool fReportExternal = false, fReportEdid = false;
+    bool external() const { return fReportExternal && fPipe.external(); }
     // The external monitor's EDID (phx_dcn_i2c.h: DDC1, the DCN hardware I2C engine as Linux drives it), read once at start
     // for an external pipe and handed to IODisplay through getDDCBlock. Empty: no DDC answer, IODisplay names a generic
     // display as before.
@@ -273,9 +279,10 @@ class PhxAMDFB : public IOFramebuffer {
         fPipe = pipe([r](uint32_t reg) { return r[reg]; });
         if (fPipe.otg < 0) { mm->release(); PFBLOG("pipe: no OTG running: built-in panel, 60 Hz assumed"); return; }
         if (fPipe.dig < 0) PFBLOG("pipe: OTG%d, no enabled DIG takes it: built-in panel assumed", fPipe.otg);
-        else PFBLOG("pipe: OTG%d -> DIG%d, signal %s (DIG_MODE %u): %s", fPipe.otg, fPipe.dig, modeName(fPipe.digMode),
-                    fPipe.digMode, external() ? "external display" : "built-in panel (eDP or DP)");
-        if (external()) readEdid(r);
+        else PFBLOG("pipe: OTG%d -> DIG%d, signal %s (DIG_MODE %u): %s, reported %s%s", fPipe.otg, fPipe.dig,
+                    modeName(fPipe.digMode), fPipe.digMode, fPipe.external() ? "external display" : "built-in panel (eDP or DP)",
+                    external() ? "external" : "built-in", fReportEdid ? " with EDID" : "");
+        if (fPipe.external()) readEdid(r);
         const uint32_t o = (uint32_t)fPipe.otg;
         const uint32_t ht = r[otgReg(o, kOtgHTotal)] + 1, vt = r[otgReg(o, kOtgVTotal)] + 1;
         const uint32_t c0 = r[otgReg(o, kOtgFrameCount)] & 0xffffff; const uint64_t t0 = mach_absolute_time();
@@ -390,9 +397,9 @@ public:
         }
     }
     // EDID for IODisplay: block 1 = bytes 0..127, block 2 = the CEA extension (IOFramebuffer numbers blocks from 1)
-    bool hasDDCConnect(IOIndex idx) override { return idx == 0 && fEdidLen >= 128; }
+    bool hasDDCConnect(IOIndex idx) override { return idx == 0 && fReportEdid && fEdidLen >= 128; }
     IOReturn getDDCBlock(IOIndex idx, UInt32 block, IOSelect type, IOOptionBits, UInt8 *data, IOByteCount *length) override {
-        if (idx != 0 || type != kIODDCBlockTypeEDID || !data || !length || block < 1 || block * 128 > fEdidLen)
+        if (!fReportEdid || idx != 0 || type != kIODDCBlockTypeEDID || !data || !length || block < 1 || block * 128 > fEdidLen)
             return kIOReturnUnsupported;
         const IOByteCount n = *length < 128 ? *length : 128;
         bcopy(fEdid + (block - 1) * 128, data, n);
@@ -401,7 +408,7 @@ public:
     }
     IOReturn getAttributeForConnection(IOIndex idx, IOSelect attr, uintptr_t *value) override {
         if (idx == 0 && attr == kConnectionSupportsHLDDCSense)
-            return fEdidLen >= 128 ? kIOReturnSuccess : kIOReturnUnsupported;
+            return (fReportEdid && fEdidLen >= 128) ? kIOReturnSuccess : kIOReturnUnsupported;
         if (idx != 0 || !value) return kIOReturnBadArgument;
         switch (attr) {
         case kConnectionEnable: case kConnectionCheckEnable: *value = 1; return kIOReturnSuccess;
@@ -517,6 +524,8 @@ bool PhxAMDFB::start(IOService *provider)
     if (!takeBootArming()) { PFBLOG("NVRAM phxfb-boot not set: leaving the firmware framebuffer this boot"); return false; }
     fPCI = OSDynamicCast(IOPCIDevice, provider);
     if (!fPCI) return false;
+    fReportExternal = PE_parse_boot_argn("-phxfbext", arg, sizeof arg);
+    fReportEdid = PE_parse_boot_argn("-phxfbedid", arg, sizeof arg);
     if (OSIterator *it = fPCI->getChildIterator(gIOServicePlane)) {
         while (OSObject *o = it->getNextObject())
             if (o != this && OSDynamicCast(IOFramebuffer, o)) fBeside = true;

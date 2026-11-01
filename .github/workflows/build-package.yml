@@ -7,12 +7,18 @@ name: Build install package
 # Download it from the run's "radearc-package" artifact.
 on:
   workflow_dispatch:
+  # after a kext or Mesa build on main, so the package always carries the newest ones
+  workflow_run:
+    workflows: [ "Build kexts", "Build Mesa RADV" ]
+    types: [ completed ]
+    branches: [ main ]
   push:
     branches: [ "main" ]
     paths: [ "install/**", "tools/phxctl/*.sh", "tools/phxctl/local.phxboot.plist", ".github/workflows/build-package.yml" ]
 
 jobs:
   package:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-15-intel
     permissions:
       contents: read

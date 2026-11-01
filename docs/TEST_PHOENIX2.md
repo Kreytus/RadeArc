@@ -184,3 +184,10 @@ reboot, or boot-arg `-phxoff`.
   answered, then `claim -> kr 0x0` and `done` 10 s after start. 60 s later the headless check restored MetalPluginName.
   System Information shows **AMD Radeon 740M, Metal Support: Metal 3**. RADV opened `canned phoenix2` through the
   plugin. The desktop stays on IONDRVFramebuffer (not armed). Logs: `hardware/dumps/b650m_8500g/testf_*.txt|log`.
+- **Test G, passed** (package 3890276: PhxBringup build 37 with the PCI power hold, PhxAccel 91efb9a presenting the
+  pipe built-in without EDID, Mesa signed ad-hoc): WindowServer composites the desktop on the Radeon 740M. Earlier tries
+  failed in this order:
+  1. CoreDisplay assert (display ID 0): NVK never came up in WindowServer, because the unsigned libvulkan_radeon.dylib
+     was refused ("mapped file has no cdhash").
+  2. A kernel panic (CPU stuck in IOPCIBridge::saveDeviceState's config read) during an M2 boot's bring-up: the GPU's
+     PCI device had no power child.

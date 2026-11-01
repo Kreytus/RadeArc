@@ -91,6 +91,11 @@ jobs:
         install_name_tool -id @rpath/libvulkan.1.dylib out/libvulkan.1.dylib
         printf '{\n  "file_format_version": "1.0.1",\n  "ICD": { "library_path": "./libvulkan_radeon.dylib", "api_version": "1.4.0" }\n}\n' \
           > out/radeon_icd.json
+        # ad-hoc sign: x86_64 links come out unsigned, and WindowServer (library validation) refuses an unsigned dylib --
+        # "mapped file has no cdhash, completely unsigned? Code has to be at least ad-hoc signed" (Test G, 2026-11-01)
+        for f in out/libvulkan_radeon.dylib out/libvulkan.1.dylib out/vkprobe; do
+          codesign --force --sign - "$f" && codesign --verify --strict "$f"
+        done
         for f in out/libvulkan_radeon.dylib out/libvulkan.1.dylib out/vkprobe; do
           echo "== $f"; otool -L "$f"
           # nothing from Homebrew may be needed at run time

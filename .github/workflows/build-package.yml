@@ -66,6 +66,9 @@ jobs:
         cp "$K"/phxctl/phxctl "$K"/phxctl/mesboot "$K"/phxctl/phxfw "$P/gpu/phxctl/"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
+        # WindowServer loads only signed code (ad-hoc is enough)
+        codesign --force --sign - "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
+        codesign --verify --strict "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
         for f in phxboot.sh full.sh bringup5.sh kinst.sh local.phxboot.plist; do cp "tools/phxctl/$f" "$P/gpu/"; done
         cp install/install.sh install/uninstall.sh "$P/"
         cp docs/INSTALL.md docs/TEST_PHOENIX2.md "$P/"

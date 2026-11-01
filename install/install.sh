@@ -86,6 +86,13 @@ done
 chown -R root:wheel "$H"
 codesign --force --sign - "$H/NVMTLDriver.bundle" >/dev/null 2>&1
 codesign --verify --strict "$H/NVMTLDriver.bundle" && say "  plugin signature ok"
+# WindowServer refuses an unsigned Mesa ("mapped file has no cdhash ... at least ad-hoc signed"): sign every dylib
+for d in "$H"/nvmtl/*.dylib; do
+    [ -L "$d" ] && continue
+    codesign --force --sign - "$d" >/dev/null 2>&1
+    codesign --verify --strict "$d" || fail "$(basename "$d") could not be signed"
+done
+say "  Mesa signature ok"
 mkdir -p "$L"
 for n in NVMTLDriver.bundle nvmtl; do
     if [ -e "$L/$n" ] && [ ! -L "$L/$n" ]; then mkdir -p "/Library/GPUBundles-backup/$TS"; mv "$L/$n" "/Library/GPUBundles-backup/$TS/"; fi

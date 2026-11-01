@@ -205,6 +205,28 @@ Register writes around the PLL command in `dcn31_program_pix_clk`, read at basel
 - `dce112_program_pixel_clk_resync` writes `PIXCLK_RESYNC_CNTL` deep colour 0 at 8 bpc. To be read in Test L before
   anything is written.
 
+### 4e (cont.). The per-mode values come from DML (decision 2026-11-01)
+
+`dcn20_enable_stream_timing` programs the OTG with `pipe_dlg_param.vready_offset / vstartup_start / vupdate_offset /
+vupdate_width / pstate_keepout`. The HUBP DLG/TTU registers, the watermarks and DISPCLK/DPPCLK also come from the
+Display Mode Library (DML, `dc/dml/dcn314`), not from fixed formulas. Linux also refuses DVI signalling on an HDMI
+connector above 165 MHz (`dcn10_link_encoder_validate_dvi_output`), so 144 Hz has to run as HDMI (DIG_MODE 3,
+`enc314_stream_encoder_hdmi_set_stream_attribute`).
+
+Without a Linux trace, these values are computed by Linux's own DML, run unmodified in userspace:
+- `tools/dml/fetch_dml.sh` pins v6.17's `display_mode_vba_314.c`, `display_rq_dlg_calc_314.c` and helpers.
+- `tools/dml/build.sh` builds `build/dml/libdml314.a`. It links against libc only; `tools/dml/shim` stands in for
+  dm_services.h, with logging and asserts compiled out.
+
+Still to do:
+1. Feed DML its inputs as `dcn314_fpu.c` does: `dcn3_14_ip`, `dcn3_14_soc`, and the clock table from the SMU DPM
+   table (`dcn314_clk_mgr_helper_populate_bw_params`). Read the DPM table from the SMU (TransferTableSmu2Dram) in a
+   dry-run step.
+2. Build the one pipe as `dcn314_populate_dml_pipes_from_context_fpu` does: one 1920×1080 ARGB8888 plane, the
+   EDID timing, HDMI output.
+3. Check the 60 Hz result against GOP's live registers (close, not identical: GOP is not Linux). Then use the
+   144 Hz result in Test L.
+
 ## 4f. The HDMI port in the VBIOS connector table (`displayobjectinfo`, data table 22, rev 1.4)
 
 `vbios.rom` at 0x3548, six paths (`atom_display_object_path_v2`, 16 bytes each). **Path 0 is the HDMI port:**

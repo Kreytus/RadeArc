@@ -23,8 +23,9 @@
 
 #include "PhxNativeABI.h"
 #include "rdna3_chip_profile.h"
+#include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 35u
+#define PHX_KEXT_BUILD 36u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -81,6 +82,8 @@ public:
     IOReturn readRegs(uint32_t first, uint32_t count, uint32_t *out);
     IOReturn vramRead(uint32_t byteOff, uint32_t count, uint32_t *out);
     IOReturn writeReg(uint32_t reg, uint32_t value, uint32_t *readback);
+    // The monitor's EDID over DDC1 (phx_dcn_i2c.h). Thread context only (polls with IODelay, every wait bounded).
+    IOReturn readEdid(uint8_t out[256], uint32_t *len, uint32_t *result);
     IOReturn vramWrite(uint32_t byteOff, uint32_t value);
     IOReturn doorbellWrite(uint64_t byteOff, uint64_t value);
     IOReturn sysMem(uint64_t op, uint64_t a, uint64_t b, uint64_t *out0, uint64_t *out1);
@@ -259,6 +262,7 @@ private:
     IOReturn doDbgSysMem(IOExternalMethodArguments *a);
     IOReturn doDbgAdoptQueue(IOExternalMethodArguments *a);
     IOReturn doDbgClaim(IOExternalMethodArguments *a);
+    IOReturn doDbgEdid(IOExternalMethodArguments *a);
     void flushBos();
     Bo *findBo(uint32_t h);
     bool ibCovered(uint64_t vaCanon, uint64_t bytes);
@@ -546,6 +550,28 @@ IOReturn PhxBringup::writeReg(uint32_t reg, uint32_t value, uint32_t *readback) 
     wreg(reg, value);
     __asm__ __volatile__("mfence" ::: "memory");
     *readback = rreg(reg);
+    return kIOReturnSuccess;
+}
+
+// The monitor's EDID with the display engine's hardware I2C engine on DDC1, as Linux dce_i2c_hw.c drives it
+// (phx_dcn_i2c.h). MMIO through rreg/wreg; every poll bounded (the I2C transaction timeout Linux computes, at most
+// ~0.4 s per 128-byte block at 100 kHz). The pad and the engine are only used when GOP left them in hardware I2C mode.
+IOReturn PhxBringup::readEdid(uint8_t out[256], uint32_t *len, uint32_t *result) {
+    *len = 0;
+    *result = phxi2c::kEngineUnavailable;
+    if (!mmio)
+        return kIOReturnNotReady;
+    if ((static_cast<uint64_t>(phxi2c::kHighestReg) + 1) * 4 > mmio->getLength())
+        return kIOReturnBadArgument;
+    struct Hw {
+        const PhxBringup *b;
+        uint32_t rd(uint32_t reg) { return b->rreg(reg); }
+        void wr(uint32_t reg, uint32_t v) { b->wreg(reg, v); }
+        void delayUs(uint32_t us) { IODelay(us); }
+    } hw{this};
+    *result = phxi2c::readEdid(hw, out, len);
+    if (debug)
+        IOLog("PhxBringup: EDID over DDC1: %s, %u bytes\n", phxi2c::resultName(*result), *len);
     return kIOReturnSuccess;
 }
 
@@ -1454,6 +1480,7 @@ static bool writesGpu(uint32_t sel) {
     case PHXN_SEL_DBG_SMU: case PHXN_SEL_DBG_PSP_RING: case PHXN_SEL_DBG_PSP_SUBMIT: case PHXN_SEL_DBG_FW_STAGE:
     case PHXN_SEL_DBG_PSP_LOADIPFW: case PHXN_SEL_DBG_PSP_CTL: case PHXN_SEL_DBG_PSP_RAW: case PHXN_SEL_DBG_WRITE_REG:
     case PHXN_SEL_DBG_VRAM_WRITE: case PHXN_SEL_DBG_DOORBELL: case PHXN_SEL_DBG_ADOPTQ: case PHXN_SEL_DBG_CLAIM:
+    case PHXN_SEL_DBG_EDID:   // drives the display engine's I2C engine
         return true;
     default:
         return false;
@@ -1496,6 +1523,7 @@ IOReturn IOAccelPhxNativeClient::externalMethod(uint32_t selector, IOExternalMet
         case PHXN_SEL_DBG_SYSMEM: r = doDbgSysMem(a); break;
         case PHXN_SEL_DBG_ADOPTQ: r = doDbgAdoptQueue(a); break;
         case PHXN_SEL_DBG_CLAIM: r = doDbgClaim(a); break;
+        case PHXN_SEL_DBG_EDID: r = doDbgEdid(a); break;
         default:                 r = kIOReturnBadArgument; break;
         }
     }
@@ -2047,6 +2075,23 @@ IOReturn IOAccelPhxNativeClient::doDbgWriteReg(IOExternalMethodArguments *a) {
     uint32_t rb = 0;
     IOReturn r = owner->writeReg(static_cast<uint32_t>(a->scalarInput[0]), static_cast<uint32_t>(a->scalarInput[1]), &rb);
     a->scalarOutput[0] = rb;
+    return r;
+}
+
+IOReturn IOAccelPhxNativeClient::doDbgEdid(IOExternalMethodArguments *a) {
+    if (!owner->debugEnabled())
+        return kIOReturnUnsupported;
+    if (!privileged)
+        return kIOReturnNotPrivileged;
+    if (!shape(a, 0, 2, 0, 256))
+        return kIOReturnBadArgument;
+    uint8_t edid[256];
+    bzero(edid, sizeof(edid));
+    uint32_t len = 0, result = 0;
+    IOReturn r = owner->readEdid(edid, &len, &result);
+    a->scalarOutput[0] = result;
+    a->scalarOutput[1] = len;
+    bcopy(edid, a->structureOutput, sizeof(edid));
     return r;
 }
 

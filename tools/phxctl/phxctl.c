@@ -8,6 +8,7 @@
  *   phxctl psp status|create <off>|destroy  PSP 13.0.4 KM ring in the UMA carve-out at byte offset <off> (root, phxdebug=1)
  *   phxctl toc <size>                     LOAD_TOC of the TOC staged at fw_buf 0; prints the TMR size the PSP asks for
  *   phxctl tmrtoc <size>                  SETUP_TMR with that size, as Linux sets it up (VRAM 128 MiB)
+ *   phxctl edid [file]                    the monitor's EDID over DDC1 (hardware I2C engine); hex dump, raw bytes to file
  *
  * Absolute offsets = IP discovery segment base + Linux register offset (hardware/dumps/firebat_u6c/ip_discovery.txt):
  * GC segment 0 = 0x1260, segment 1 = 0xA000.
@@ -31,6 +32,7 @@
 #define SEL_DBG_PSP_RAW 107
 #define SEL_DBG_WRITE_REG 108
 #define SEL_DBG_VRAM_WRITE 109
+#define SEL_DBG_EDID 114
 
 static io_connect_t conn;
 
@@ -271,6 +273,42 @@ int main(int argc, char **argv)
       }
       fclose(f);
       printf("staged %s[0x%x:+%u] @fwbuf+0x%x\n", path, foff, staged, bufoff);
+   } else if (!strcmp(argv[1], "edid")) {
+      static const char *const kRes[] = { "ok", "DDC1 pad not in hardware I2C mode", "I2C engine used by HW/DMCU",
+                                          "DIO I2C memory did not power up", "I2C arbitration not granted",
+                                          "MICROSECOND_TIME_BASE_DIV is 0", "I2C engine busy",
+                                          "no ACK at 0x50 (no monitor?)", "I2C timeout", "I2C aborted",
+                                          "bad EDID header", "bad EDID checksum" };
+      uint64_t out[2] = {0, 0};
+      uint32_t n = 2;
+      uint8_t edid[256] = {0};
+      size_t sz = sizeof(edid);
+      kern_return_t kr = IOConnectCallMethod(conn, SEL_DBG_EDID, NULL, 0, NULL, 0, out, &n, edid, &sz);
+      const uint32_t res = (uint32_t)out[0], len = (uint32_t)out[1];
+      printf("edid -> kr 0x%08x  result %u (%s)  %u bytes\n", kr, res,
+             res < sizeof(kRes) / sizeof(kRes[0]) ? kRes[res] : "?", len);
+      for (uint32_t i = 0; i < len; i += 16) {
+         printf("%03x:", i);
+         for (uint32_t j = 0; j < 16; j++) printf(" %02x", edid[i + j]);
+         printf("\n");
+      }
+      if (len >= 128) {
+         const uint16_t mfg = (uint16_t)(edid[8] << 8 | edid[9]);
+         printf("manufacturer %c%c%c  product 0x%04x  serial 0x%08x  week %u year %u  EDID %u.%u  extensions %u\n",
+                '@' + ((mfg >> 10) & 31), '@' + ((mfg >> 5) & 31), '@' + (mfg & 31), edid[10] | edid[11] << 8,
+                (uint32_t)(edid[12] | edid[13] << 8 | edid[14] << 16 | (uint32_t)edid[15] << 24), edid[16],
+                1990 + edid[17], edid[18], edid[19], edid[126]);
+         for (int d = 54; d < 126; d += 18) {   /* monitor name descriptor (tag 0xFC) */
+            if (edid[d] || edid[d + 1] || edid[d + 3] != 0xfc) continue;
+            char name[14] = {0};
+            for (int k = 0; k < 13 && edid[d + 5 + k] != 0x0a; k++) name[k] = (char)edid[d + 5 + k];
+            printf("monitor name \"%s\"\n", name);
+         }
+      }
+      if (argc >= 3 && len) {
+         FILE *f = fopen(argv[2], "wb");
+         if (f) { fwrite(edid, 1, len, f); fclose(f); printf("wrote %s\n", argv[2]); }
+      }
    } else if (!strcmp(argv[1], "wreg") && argc >= 4) {
       uint64_t in[2] = {strtoull(argv[2], NULL, 0), strtoull(argv[3], NULL, 0)}, out[1] = {0};
       uint32_t n = 1;

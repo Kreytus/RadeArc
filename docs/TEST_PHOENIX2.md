@@ -127,6 +127,26 @@ It asks for your password once and writes `~/Desktop/testd.txt`. Expected, after
 
 Send me `testd.txt`. After that, remove `-phxp2` again.
 
+## Test E: read the monitor's EDID over DDC1 (Phase 3a, PhxBringup build 36)
+
+What it does: PhxBringup drives the display engine's hardware I2C engine exactly as Linux does (dce_i2c_hw.c,
+`src/amd/phx_dcn_i2c.h`) and reads your monitor's EDID from DDC1. It does not start the GPU, touch the display pipe or
+change the picture. It refuses before sending anything if GOP did not leave DDC1 in hardware I2C mode, or if the display
+firmware holds the engine.
+
+1. GitHub → **Actions → Build kexts → the latest green run → Artifacts → kexts**. Unzip it.
+2. Replace `EFI/OC/Kexts/PhxBringup.kext` with the new one (build 36), and copy the new `phxctl` folder's files over
+   `~/gpu/phxctl/` (then `xattr -dr com.apple.quarantine ~/gpu/phxctl`).
+3. boot-args: `phxdebug=1 -phxp2`. Reboot, then:
+
+```bash
+sudo ~/gpu/phxctl/phxctl edid ~/Desktop/edid.bin > ~/Desktop/teste.txt
+```
+
+Expected in `teste.txt`: `edid -> kr 0x00000000  result 0 (ok)  256 bytes`, a hex dump starting
+`000: 00 ff ff ff ff ff ff 00`, then your monitor's manufacturer code and name. Send me `teste.txt` and `edid.bin`.
+After that, remove `-phxp2` again.
+
 ## Results on the B650M D3HP AX + Ryzen 5 8500G (build 35)
 
 - **Test A, passed:** chip Phoenix 2, gc 11.0.4 (720900), UMA 2 GiB at 0x3E0000000; the PSP stays refused while read-only.

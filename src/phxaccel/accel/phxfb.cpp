@@ -240,7 +240,8 @@ class PhxAMDFB : public IOFramebuffer {
     // 2 %.
     void measureRefresh() {
         IOMemoryMap *mm = fPCI ? fPCI->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress5) : nullptr;
-        if (!mm || mm->getLength() < (uint64_t)(phxdcn::kHighestReg + 1) * 4) {   // BAR5 is 512 KiB OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
+        // BAR5 is 512 KiB; the highest register read is phxdcn::kHighestReg
+        if (!mm || mm->getLength() < (uint64_t)(phxdcn::kHighestReg + 1) * 4) { OSSafeReleaseNULL(mm); PFBLOG("refresh: no MMIO view, 60 Hz assumed"); return; }
         volatile uint32_t *r = (volatile uint32_t *)mm->getVirtualAddress();
         using namespace phxdcn;
         fPipe = pipe([r](uint32_t reg) { return r[reg]; });

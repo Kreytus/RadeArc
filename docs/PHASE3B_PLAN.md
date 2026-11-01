@@ -218,7 +218,33 @@ Without a Linux trace, these values are computed by Linux's own DML, run unmodif
 - `tools/dml/build.sh` builds `build/dml/libdml314.a`. It links against libc only; `tools/dml/shim` stands in for
   dm_services.h, with logging and asserts compiled out.
 
-Still to do:
+**Done (2026-11-01): `tools/dml/dml314_run.c`** reproduces Linux's call chain for one HDMI display:
+- `dcn314_clk_mgr_helper_populate_bw_params`
+- `dcn314_update_bw_bounding_box_fpu`
+- `dml_init_instance(DCN314)`
+- `dcn30_internal_validate_bw` with `dcn314_populate_dml_pipes_from_context_fpu`
+- `dcn31_calculate_wm_and_dlg_fp`
+- `dcn20_calculate_dlg_params`
+
+Inputs:
+- the SMU DPM table from Test clk
+- VBIOS DDR5 (0x22), 4 channels (0 → 4), 24 MHz reference
+- a 1920×1080 ARGB8888 linear plane
+- DCHUB refclk 24 MHz (hubbub31: 12 MHz if REFDIV == 2, read in Test L's dry run)
+
+Results:
+
+| Mode | vlevel | DPP/ODM | DISPCLK | DPPCLK | vstartup | vupdate off/width | vready | urgent WM |
+|---|---|---|---|---|---|---|---|---|
+| 60 Hz (148.5 MHz) | 0 | 1 / off | 152.380 MHz | 149.411 MHz | 44 | 550 / 247 | 328 | 8290 ns |
+| 144 Hz (335.77 MHz) | 0 | 1 / off | 342.857 MHz | 337.478 MHz | 40 | 520 / 247 | 328 | 8290 ns |
+| 180 Hz (415.58 MHz) | 0 | 1 / off | 436.363 MHz | 419.251 MHz | 29 | 520 / 246 | 327 | 8290 ns |
+
+One unsplit pipe in every mode, so the single-pipe takeover fits. GOP runs DISPCLK at 165.5 MHz for 60 Hz; Linux
+would use 152.4 MHz, so the formula is in range. For 144 Hz, DISPCLK must be raised to ≥ 342.857 MHz through SMU
+`SetDispclkFreq` (343 MHz after `khz_to_mhz_ceil`), and DPPCLK through `SetDppclkFreq` (338 MHz).
+
+Earlier plan (kept for reference):
 1. Feed DML its inputs as `dcn314_fpu.c` does: `dcn3_14_ip`, `dcn3_14_soc`, and the clock table from the SMU DPM
    table (`dcn314_clk_mgr_helper_populate_bw_params`). Read the DPM table from the SMU (TransferTableSmu2Dram) in a
    dry-run step.

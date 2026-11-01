@@ -36,3 +36,12 @@ jobs:
           echo "::error title=Unit tests failed::${msg}"
         fi
         exit "$status"
+
+    - name: Linux DML (DCN 3.1.4) for the 8500G's HDMI modes
+      shell: bash
+      run: |
+        CC=clang bash tools/dml/build.sh
+        for m in "148500 1920 88 44 2200 1080 4 5 1125" "335770 1920 48 32 2080 1080 4 5 1121" \
+                 "415580 1920 48 32 2080 1080 3 4 1110"; do
+          ./build/dml/dml314_run $m | sed -n 10,20p
+        done

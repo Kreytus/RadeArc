@@ -106,6 +106,27 @@ Expected: a `mesboot: chip Phoenix 2, VRAM MC 0x8000000000 size 2048 MiB, FB phy
 
 Send me `~/gpu/test-c.log`. After that, remove `-phxp2` again until we go on.
 
+## Test D: the Vulkan driver (RADV) on the real GPU (Phase 2, only after C worked)
+
+1. On any PC: GitHub → **Actions → Build Mesa RADV → the latest green run → Artifacts → mesa-radv**. Unzip it. It holds
+   `libvulkan_radeon.dylib`, `libvulkan.1.dylib` (the Vulkan loader, so no Homebrew is needed), `vkprobe`,
+   `radeon_icd.json`, `testd.sh` and `BUILD.txt`.
+2. On the 8500G: copy that folder's files to `~/gpu/mesa/`. boot-args: `phxdebug=1 -phxp2`. Reboot, then:
+
+```bash
+bash ~/gpu/mesa/testd.sh
+```
+
+It asks for your password once and writes `~/Desktop/testd.txt`. Expected, after the Test C lines:
+- `radv-darwin: native kext: ABI ..., canned phoenix2, GB_ADDR_CONFIG 0x00000142, ...`: RADV picked the Phoenix 2 table
+  from the GC version the kext read (11.0.4), not from the PCI ID
+- `[0] AMD Radeon 740M Graphics (RADV PHOENIX2)  vendor 0x1002 device 0x15c8 ...`
+- `device created`, `compute pipeline compiled` (ACO compiled for gfx1103), `dispatch submitted and fence signalled`
+- `results: 256/256 correct`
+- `watchdog cancelled rc=0`
+
+Send me `testd.txt`. After that, remove `-phxp2` again.
+
 ## Results on the B650M D3HP AX + Ryzen 5 8500G (build 35)
 
 - **Test A, passed:** chip Phoenix 2, gc 11.0.4 (720900), UMA 2 GiB at 0x3E0000000; the PSP stays refused while read-only.

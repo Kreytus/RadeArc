@@ -27,8 +27,23 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # A push that also changes the kexts or Mesa starts this run before their builds finish, so it would package the
+    # previous ones (2026-11-01: build 39 shipped as "the new package"). Those pushes are packaged by workflow_run.
+    - name: Skip a push whose kexts/Mesa are still building
+      id: gate
+      run: |
+        skip=0
+        if [ "${{ github.event_name }}" = push ] && git cat-file -e "${{ github.event.before }}" 2>/dev/null &&
+           git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -qE '^(src/|mesa-patches-phoenix/|tools/phxctl/.*\.(c|cpp)$|tools/vkprobe/)'; then
+          skip=1; echo "::notice::kexts/Mesa change in this push: the package comes from the workflow_run after their builds"
+        fi
+        echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
     - name: Upstream release
+      if: steps.gate.outputs.skip != '1'
       run: |
         mkdir -p "$RUNNER_TEMP/up" && cd "$RUNNER_TEMP/up"
         gh release list --repo luuumi-dev/nullarc -L 20 || true
@@ -44,6 +59,7 @@ jobs:
         test -d "$UP/PhxGPU/NVMTLDriver.bundle"
 
     - name: This repository's builds
+      if: steps.gate.outputs.skip != '1'
       run: |
         for w in build-kexts.yml:kexts build-mesa.yml:mesa-radv; do
           # the newest green run by run id (ids only grow; the API's timestamps did not order them: Test G got old kexts)
@@ -55,6 +71,7 @@ jobs:
         cat "$RUNNER_TEMP/kexts/BUILD.txt" "$RUNNER_TEMP/mesa-radv/BUILD.txt"
 
     - name: Assemble
+      if: steps.gate.outputs.skip != '1'
       run: |
         P="$RUNNER_TEMP/out/radearc-package"
         mkdir -p "$(dirname "$P")"
@@ -102,6 +119,7 @@ jobs:
         grep -q 0x15c81002 "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist" || { echo "::error::PhxAccel lacks 15C8"; exit 1; }
 
     - uses: actions/upload-artifact@v4
+      if: steps.gate.outputs.skip != '1'
       with:
         name: radearc-package
         path: ${{ runner.temp }}/out/

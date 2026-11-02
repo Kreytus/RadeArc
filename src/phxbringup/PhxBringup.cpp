@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 40u
+#define PHX_KEXT_BUILD 41u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -65,6 +65,12 @@ SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb, CTLFLAG_RD | CTLFLAG_LOCKED, (unsig
             "host-imported MiB now, all clients");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_mb_peak, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostMbPeak, 0,
             "most host-imported MiB at once, all clients");
+// debug.phxbo_host_ro (default 0): the read-only fallback of build 40. With it WindowServer's GPU hung within a minute
+// (watchdog: nvmtl.execution spinning in the kext's fence wait, 2026-11-02): those pages are not only read by the GPU.
+// Off, a read-only IOSurface import fails as in build 39 and Metal copies it instead, which worked.
+static unsigned int gHostRo = 0;
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_ro, CTLFLAG_RW | CTLFLAG_LOCKED, &gHostRo, 0,
+            "1 = wire read-only host imports for device reads (experimental, hung the GPU)");
 static volatile UInt32 gHostReadOnly, gHostWireErr, gHostWireErrRo;
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_readonly, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostReadOnly, 0,
             "host imports wired read-only (the caller's pages are read-only)");
@@ -447,6 +453,7 @@ void PhxBringup::stop(IOService *provider) {
         sysctl_unregister_oid(&sysctl__debug_phxbo_vmmap_fail);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_mb_peak);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_host_ro);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_wire_err_ro);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_wire_err);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_readonly);
@@ -1479,6 +1486,7 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxbo_vmmap_fail);
         sysctl_register_oid(&sysctl__debug_phxbo_host_mb);
         sysctl_register_oid(&sysctl__debug_phxbo_host_mb_peak);
+        sysctl_register_oid(&sysctl__debug_phxbo_host_ro);
         sysctl_register_oid(&sysctl__debug_phxbo_host_wire_err_ro);
         sysctl_register_oid(&sysctl__debug_phxbo_host_wire_err);
         sysctl_register_oid(&sysctl__debug_phxbo_host_readonly);
@@ -1854,6 +1862,10 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
     if (r != kIOReturnSuccess) {
         gHostWireErr = (UInt32)r;
         md->release();
+        if (!gHostRo) {
+            OSIncrementAtomic(&gHostWireFail);
+            return r;
+        }
         md = IOMemoryDescriptor::withAddressRange(va, size, kIODirectionOut, task);
         if (!md)
             return kIOReturnNoMemory;

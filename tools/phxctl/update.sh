@@ -10,8 +10,10 @@
 #
 # Asks before changing anything and before rebooting. The kill switch /Users/Shared/gpu/phxboot-off is only removed
 # if you say so. Packages are kept in ~/RadeArc/packages (the newest 3), EFI kext backups in
-# /Users/Shared/gpu/efi-backup.
+# /Users/Shared/gpu/efi-backup. Run from a package folder elsewhere (e.g. ~/Desktop/radearc-package), that folder is
+# replaced with the package just installed, so its scripts match what is installed; the old one goes to the Trash.
 set -uo pipefail
+SELF=$(cd "$(dirname "$0")" && pwd)
 REPO=Kreytus/RadeArc
 REL=https://github.com/$REPO/releases/download/package-latest
 BASE=$HOME/RadeArc; PKGS=$BASE/packages
@@ -61,6 +63,20 @@ find_efi() {
     echo "${cands[$((i - 1))]}"
 }
 
+# Replace the package folder this script runs from with $1. Renames only: bash keeps reading this script from the open
+# file, so the rest of the run is unaffected.
+refresh_self() {
+    local P=$1 tr
+    [ -f "$SELF/install.sh" ] && [ -f "$SELF/update.sh" ] || return 0
+    case "$SELF/" in "$PKGS"/*|"$P"/*) return 0 ;; esac
+    [ "$SELF" = "$P" ] && return 0
+    rm -rf "$SELF.new" && ditto "$P" "$SELF.new" || { say "  (could not refresh $SELF: kept as it was)"; rm -rf "$SELF.new"; return 0; }
+    tr="$HOME/.Trash/$(basename "$SELF")-$(date +%Y%m%d-%H%M%S)"
+    mv "$SELF" "$tr" 2>/dev/null || { rm -rf "$SELF.new"; say "  (could not move $SELF to the Trash: kept as it was)"; return 0; }
+    mv "$SELF.new" "$SELF" || { mv "$tr" "$SELF"; say "  (could not refresh $SELF: kept as it was)"; return 0; }
+    say "  ✓ $SELF now holds this package (the old one is in the Trash)"
+}
+
 install_pkg() {   # $1 = unpacked package folder
     local P=$1 ts efi
     [ -f "$P/install.sh" ] && [ -d "$P/EFI/OC/Kexts/PhxBringup.kext" ] || die "$P is not a RadeArc package"
@@ -91,6 +107,7 @@ install_pkg() {   # $1 = unpacked package folder
     fi
     { echo "$P"; cat "$P/RADEARC_BUILD.txt"; } | sudo tee "$STATE" >/dev/null
     [ -n "${PREV:-}" ] && echo "$PREV" | sudo tee "$G/radearc-previous.txt" >/dev/null
+    refresh_self "$P"
     say "== done. After the reboot check:  ioreg -rc PhxBringup | grep phx-build"
     ask "Reboot now?" && sudo reboot
 }

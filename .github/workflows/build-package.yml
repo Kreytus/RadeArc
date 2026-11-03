@@ -21,7 +21,7 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-15-intel
     permissions:
-      contents: read
+      contents: write   # the rolling "package-latest" release update.sh downloads from
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
@@ -91,6 +91,7 @@ jobs:
         cp "$K"/phxctl/clkinfo "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no clkinfo in the kext build yet"
         cp tools/phxctl/testclk.sh "$P/"
         cp tools/phxctl/bocheck.sh "$P/"
+        cp tools/phxctl/update.sh "$P/"
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
@@ -124,3 +125,17 @@ jobs:
         name: radearc-package
         path: ${{ runner.temp }}/out/
         retention-days: 30
+
+    # update.sh downloads from here: https://github.com/<repo>/releases/download/package-latest/radearc-package.zip
+    # (a release, unlike an Actions artifact, downloads without a GitHub login)
+    - name: Publish to the package-latest release
+      if: steps.gate.outputs.skip != '1'
+      run: |
+        cd "$RUNNER_TEMP/out"
+        ditto -c -k --keepParent radearc-package radearc-package.zip
+        cp radearc-package/RADEARC_BUILD.txt .
+        gh release view package-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+          gh release create package-latest --repo "$GITHUB_REPOSITORY" --prerelease --title "Latest install package" \
+            --notes "Rebuilt by CI after every kext/Mesa build. Install with tools/phxctl/update.sh."
+        gh release upload package-latest radearc-package.zip RADEARC_BUILD.txt --clobber --repo "$GITHUB_REPOSITORY"
+        gh release edit package-latest --repo "$GITHUB_REPOSITORY" --notes "$(cat RADEARC_BUILD.txt)"

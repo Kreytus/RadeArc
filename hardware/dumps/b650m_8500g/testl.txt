@@ -1,0 +1,150 @@
+== 2026-11-03 17:27:20 testl (RadeArc package bb5dccd3007535e46cfdeef722325c898a79b623)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 42
+== context (read-only)
+  DCHUBBUB_GLOBAL_TIMER_CNTL   [0x039e4] = 0x00001001
+      DCHUBBUB_GLOBAL_TIMER_REFDIV           1
+      DCHUBBUB_GLOBAL_TIMER_ENABLE           1
+  PHYPLLA_PIXCLK_RESYNC_CNTL   [0x00100] = 0x00000103
+      PHYPLLA_PIXCLK_RESYNC_ENABLE           1
+      PHYPLLA_DEEP_COLOR_DTO_ENABLE_STATUS   1
+      PHYPLLA_DCCG_DEEP_COLOR_CNTL           0
+      PHYPLLA_PIXCLK_ENABLE                  1
+  HUBP0_DCHUBP_CNTL            [0x03ab3] = 0x000f1002
+      HUBP_BLANK_EN                          0
+      HUBP_TTU_DISABLE                       1
+  HUBP1_DCHUBP_CNTL            [0x03b8f] = 0x000f101b
+      HUBP_BLANK_EN                          1
+      HUBP_TTU_DISABLE                       1
+  HUBP2_DCHUBP_CNTL            [0x03c6b] = 0x000f102b
+      HUBP_BLANK_EN                          1
+      HUBP_TTU_DISABLE                       1
+  HUBP3_DCHUBP_CNTL            [0x03d47] = 0x000f103b
+      HUBP_BLANK_EN                          1
+      HUBP_TTU_DISABLE                       1
+  DLG refclk (hubbub31_get_dchub_ref_freq): 24000 kHz -> DML plans for 24 MHz
+  144 Hz needs DISPCLK >= 342857 kHz, DPPCLK >= 337478 kHz (SMU SetDispclkFreq / SetDppclkFreq)
+== HUBP0 / OTG0: live (GOP, 60 Hz) | Linux DML 60 Hz | Linux DML 144 Hz
+  HUBPREQ_DEBUG_DB           [0x03ab6] live 0x00000100 | 60 0x00000100 | 144 0x00000100  WRITE hubp2_vready_at_or_After_vsync
+      (whole)                                   256 =        256          256   (const:256)
+  DCHUBP_CNTL                [0x03ab3] live 0x000f1002 | 60 0x000f1002 | 144 0x000f1002  UPDATE hubp2_vready_at_or_After_vsync
+      HUBP_VREADY_AT_OR_AFTER_VSYNC               0 =          0            0   (calc.vready_after_vsync)
+  HUBPRET_CONTROL            [0x03b2c] live 0x00e40000 | 60 0x00e40000 | 144 0x00e40000  UPDATE hubp21_program_requestor
+      DET_BUF_PLANE1_BASE_ADDRESS                 0 =          0            0   (rq.plane1_base_address)
+  DCN_EXPANSION_MODE         [0x03ae9] live 0x00000055 | 60 0x00000056 | 144 0x00000056  SET hubp21_program_requestor
+      DRQ_EXPANSION_MODE                          1            2            2   (rq.drq_expansion_mode)
+      PRQ_EXPANSION_MODE                          1 =          1            1   (rq.prq_expansion_mode)
+      MRQ_EXPANSION_MODE                          1 =          1            1   (rq.mrq_expansion_mode)
+      CRQ_EXPANSION_MODE                          1 =          1            1   (rq.crq_expansion_mode)
+  DCHUBP_REQ_SIZE_CONFIG     [0x03ab1] live 0x00000300 | 60 0x033d1b40 | 144 0x033d1b40  SET hubp21_program_requestor
+      CHUNK_SIZE                                  3 =          3            3   (rq.rq_regs_l.chunk_size)
+      MIN_CHUNK_SIZE                              0            3            3   (rq.rq_regs_l.min_chunk_size)
+      META_CHUNK_SIZE                             0            1            1   (rq.rq_regs_l.meta_chunk_size)
+      MIN_META_CHUNK_SIZE                         0            3            3   (rq.rq_regs_l.min_meta_chunk_size)
+      DPTE_GROUP_SIZE                             0            3            3   (rq.rq_regs_l.dpte_group_size)
+      VM_GROUP_SIZE                               0            3            3   (rq.rq_regs_l.mpte_group_size)
+      SWATH_HEIGHT                                0 =          0            0   (rq.rq_regs_l.swath_height)
+      PTE_ROW_HEIGHT_LINEAR                       0            4            4   (rq.rq_regs_l.pte_row_height_linear)
+  DCHUBP_REQ_SIZE_CONFIG_C   [0x03ab2] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp21_program_requestor
+      CHUNK_SIZE_C                                0 =          0            0   (rq.rq_regs_c.chunk_size)
+      MIN_CHUNK_SIZE_C                            0 =          0            0   (rq.rq_regs_c.min_chunk_size)
+      META_CHUNK_SIZE_C                           0 =          0            0   (rq.rq_regs_c.meta_chunk_size)
+      MIN_META_CHUNK_SIZE_C                       0 =          0            0   (rq.rq_regs_c.min_meta_chunk_size)
+      DPTE_GROUP_SIZE_C                           0 =          0            0   (rq.rq_regs_c.dpte_group_size)
+      SWATH_HEIGHT_C                              0 =          0            0   (rq.rq_regs_c.swath_height)
+      PTE_ROW_HEIGHT_LINEAR_C                     0 =          0            0   (rq.rq_regs_c.pte_row_height_linear)
+  BLANK_OFFSET_0             [0x03b04] live 0x00290040 | 60 0x0029001f | 144 0x00250008  SET hubp2_program_deadline
+      REFCYC_H_BLANK_END                         64           31            8   (dlg.refcyc_h_blank_end)
+      DLG_V_BLANK_END                            41 =         41           37   (dlg.dlg_vblank_end)
+  BLANK_OFFSET_1             [0x03b05] live 0x00000000 | 60 0x00001188 | 144 0x00001178  SET hubp2_program_deadline
+      MIN_DST_Y_NEXT_START                        0         4488         4472   (dlg.min_dst_y_next_start)
+  DST_DIMENSIONS             [0x03b06] live 0x00000000 | 60 0x0001638e | 144 0x000094ac  SET hubp2_program_deadline
+      REFCYC_PER_HTOTAL                           0        91022        38060   (dlg.refcyc_per_htotal)
+  DST_AFTER_SCALER           [0x03b07] live 0x00000000 | 60 0x00000021 | 144 0x0000000f  SET hubp2_program_deadline
+      REFCYC_X_AFTER_SCALER                       0           33           15   (dlg.refcyc_x_after_scaler)
+      DST_Y_AFTER_SCALER                          0 =          0            0   (dlg.dst_y_after_scaler)
+  REF_FREQ_TO_PIX_FREQ       [0x03b1d] live 0x00000000 | 60 0x00014afd | 144 0x00009262  SET hubp2_program_deadline
+      REF_FREQ_TO_PIX_FREQ                        0        84733        37474   (dlg.ref_freq_to_pix_freq)
+  VBLANK_PARAMETERS_1        [0x03b0b] live 0x00000000 | 60 0x00000085 | 144 0x0000004a  SET hubp2_program_deadline
+      REFCYC_PER_PTE_GROUP_VBLANK_L               0          133           74   (dlg.refcyc_per_pte_group_vblank_l)
+  NOM_PARAMETERS_0           [0x03b12] live 0x00000000 | 60 0x00000200 | 144 0x00000200  SET hubp2_program_deadline
+      DST_Y_PER_PTE_ROW_NOM_L                     0          512          512   (dlg.dst_y_per_pte_row_nom_l)
+  NOM_PARAMETERS_1           [0x03b13] live 0x00000000 | 60 0x00002c71 | 144 0x00001295  SET hubp2_program_deadline
+      REFCYC_PER_PTE_GROUP_NOM_L                  0        11377         4757   (dlg.refcyc_per_pte_group_nom_l)
+  NOM_PARAMETERS_4           [0x03b16] live 0x00000000 | 60 0x00000020 | 144 0x00000020  SET hubp2_program_deadline
+      DST_Y_PER_META_ROW_NOM_L                    0           32           32   (dlg.dst_y_per_meta_row_nom_l)
+  NOM_PARAMETERS_5           [0x03b17] live 0x00000000 | 60 0x00000b1c | 144 0x000004a5  SET hubp2_program_deadline
+      REFCYC_PER_META_CHUNK_NOM_L                 0         2844         1189   (dlg.refcyc_per_meta_chunk_nom_l)
+  PER_LINE_DELIVERY          [0x03b1b] live 0x00000000 | 60 0x00000136 | 144 0x00000089  SET hubp2_program_deadline
+      REFCYC_PER_LINE_DELIVERY_L                  0          310          137   (dlg.refcyc_per_line_delivery_l)
+      REFCYC_PER_LINE_DELIVERY_C                  0 =          0            0   (dlg.refcyc_per_line_delivery_c)
+  VBLANK_PARAMETERS_2        [0x03b0c] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_program_deadline
+      REFCYC_PER_PTE_GROUP_VBLANK_C               0 =          0            0   (dlg.refcyc_per_pte_group_vblank_c)
+  NOM_PARAMETERS_2           [0x03b14] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_program_deadline
+      DST_Y_PER_PTE_ROW_NOM_C                     0 =          0            0   (dlg.dst_y_per_pte_row_nom_c)
+  NOM_PARAMETERS_3           [0x03b15] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_program_deadline
+      REFCYC_PER_PTE_GROUP_NOM_C                  0 =          0            0   (dlg.refcyc_per_pte_group_nom_c)
+  NOM_PARAMETERS_6           [0x03b18] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_program_deadline
+      DST_Y_PER_META_ROW_NOM_C                    0 =          0            0   (dlg.dst_y_per_meta_row_nom_c)
+  NOM_PARAMETERS_7           [0x03b19] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_program_deadline
+      REFCYC_PER_META_CHUNK_NOM_C                 0 =          0            0   (dlg.refcyc_per_meta_chunk_nom_c)
+  DCN_TTU_QOS_WM             [0x03aea] live 0x00000000 | 60 0x058e0000 | 144 0x02520000  SET hubp2_program_deadline
+      QoS_LEVEL_LOW_WM                            0 =          0            0   (ttu.qos_level_low_wm)
+      QoS_LEVEL_HIGH_WM                           0         1422          594   (ttu.qos_level_high_wm)
+  DCN_SURF0_TTU_CNTL0        [0x03aec] live 0x08000000 | 60 0x0800295f | 144 0x0800124c  SET hubp2_program_deadline
+      REFCYC_PER_REQ_DELIVERY                     0        10591         4684   (ttu.refcyc_per_req_delivery_l)
+      QoS_LEVEL_FIXED                             8 =          8            8   (ttu.qos_level_fixed_l)
+      QoS_RAMP_DISABLE                            0 =          0            0   (ttu.qos_ramp_disable_l)
+  DCN_SURF1_TTU_CNTL0        [0x03aee] live 0x00000000 | 60 0x08000000 | 144 0x08000000  SET hubp2_program_deadline
+      REFCYC_PER_REQ_DELIVERY                     0 =          0            0   (ttu.refcyc_per_req_delivery_c)
+      QoS_LEVEL_FIXED                             0            8            8   (ttu.qos_level_fixed_c)
+      QoS_RAMP_DISABLE                            0 =          0            0   (ttu.qos_ramp_disable_c)
+  DCN_CUR0_TTU_CNTL0         [0x03af0] live 0x00000000 | 60 0x08000000 | 144 0x08000000  SET hubp2_program_deadline
+      REFCYC_PER_REQ_DELIVERY                     0 =          0            0   (ttu.refcyc_per_req_delivery_cur0)
+      QoS_LEVEL_FIXED                             0            8            8   (ttu.qos_level_fixed_cur0)
+      QoS_RAMP_DISABLE                            0 =          0            0   (ttu.qos_ramp_disable_cur0)
+  FLIP_PARAMETERS_1          [0x03b10] live 0x00000000 | 60 0x00000058 | 144 0x0000004a  SET hubp2_program_deadline
+      REFCYC_PER_PTE_GROUP_FLIP_L                 0           88           74   (dlg.refcyc_per_pte_group_flip_l)
+  DCN_DMDATA_VM_CNTL         [0x03af4] live 0x80000000 | 60 0x80000000 | 144 0x80000000  UPDATE hubp3_program_deadline
+      REFCYC_PER_VM_DMDATA                        0 =          0            0   (dlg.refcyc_per_vm_dmdata)
+  PREFETCH_SETTINGS          [0x03b08] live 0x28080000 | 60 0x1c080000 | 144 0x1d0ccccc  SET hubp2_setup_interdependent
+      DST_Y_PREFETCH                             40           28           29   (dlg.dst_y_prefetch)
+      VRATIO_PREFETCH                        524288 =     524288       838860   (dlg.vratio_prefetch)
+  PREFETCH_SETTINGS_C        [0x03b09] live 0x00080000 | 60 0x00080000 | 144 0x00080000  SET hubp2_setup_interdependent
+      VRATIO_PREFETCH_C                      524288 =     524288       524288   (dlg.vratio_prefetch_c)
+  VBLANK_PARAMETERS_0        [0x03b0a] live 0x00000301 | 60 0x00000604 | 144 0x00000808  SET hubp2_setup_interdependent
+      DST_Y_PER_VM_VBLANK                         1            4            8   (dlg.dst_y_per_vm_vblank)
+      DST_Y_PER_ROW_VBLANK                        3            6            8   (dlg.dst_y_per_row_vblank)
+  FLIP_PARAMETERS_0          [0x03b0f] live 0x00000000 | 60 0x00000404 | 144 0x00000808  SET hubp2_setup_interdependent
+      DST_Y_PER_VM_FLIP                           0            4            8   (dlg.dst_y_per_vm_flip)
+      DST_Y_PER_ROW_FLIP                          0            4            8   (dlg.dst_y_per_row_flip)
+  VBLANK_PARAMETERS_3        [0x03b0d] live 0x00000000 | 60 0x00000215 | 144 0x00000129  SET hubp2_setup_interdependent
+      REFCYC_PER_META_CHUNK_VBLANK_L              0          533          297   (dlg.refcyc_per_meta_chunk_vblank_l)
+  VBLANK_PARAMETERS_4        [0x03b0e] live 0x00000000 | 60 0x00000215 | 144 0x00000129  SET hubp2_setup_interdependent
+      REFCYC_PER_META_CHUNK_VBLANK_C              0          533          297   (dlg.refcyc_per_meta_chunk_vblank_c)
+  FLIP_PARAMETERS_2          [0x03b11] live 0x00000000 | 60 0x00000163 | 144 0x00000129  SET hubp2_setup_interdependent
+      REFCYC_PER_META_CHUNK_FLIP_L                0          355          297   (dlg.refcyc_per_meta_chunk_flip_l)
+  PER_LINE_DELIVERY_PRE      [0x03b1a] live 0x00000000 | 60 0x00000136 | 144 0x00000044  SET hubp2_setup_interdependent
+      REFCYC_PER_LINE_DELIVERY_PRE_L              0          310           68   (dlg.refcyc_per_line_delivery_pre_l)
+      REFCYC_PER_LINE_DELIVERY_PRE_C              0 =          0            0   (dlg.refcyc_per_line_delivery_pre_c)
+  DCN_SURF0_TTU_CNTL1        [0x03aed] live 0x00000000 | 60 0x0000295f | 144 0x0000091a  SET hubp2_setup_interdependent
+      REFCYC_PER_REQ_DELIVERY_PRE                 0        10591         2330   (ttu.refcyc_per_req_delivery_pre_l)
+  DCN_SURF1_TTU_CNTL1        [0x03aef] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_setup_interdependent
+      REFCYC_PER_REQ_DELIVERY_PRE                 0 =          0            0   (ttu.refcyc_per_req_delivery_pre_c)
+  DCN_CUR0_TTU_CNTL1         [0x03af1] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_setup_interdependent
+      REFCYC_PER_REQ_DELIVERY_PRE                 0 =          0            0   (ttu.refcyc_per_req_delivery_pre_cur0)
+  DCN_CUR1_TTU_CNTL1         [0x03af3] live 0x00000000 | 60 0x00000000 | 144 0x00000000  SET hubp2_setup_interdependent
+      REFCYC_PER_REQ_DELIVERY_PRE                 0 =          0            0   (ttu.refcyc_per_req_delivery_pre_cur1)
+  DCN_GLOBAL_TTU_CNTL        [0x03aeb] live 0xe3000a64 | 60 0xe00032b2 | 144 0xe00012cf  SET hubp2_setup_interdependent
+      MIN_TTU_VBLANK                           2660        12978         4815   (ttu.min_ttu_vblank)
+      QoS_LEVEL_FLIP                             14 =         14           14   (ttu.qos_level_flip)
+  OTG_VSTARTUP_PARAM         [0x05046] live 0x0000000d | 60 0x0000002c | 144 0x00000028  SET optc1_program_global_sync
+      VSTARTUP_START                             13           44           40   (dest.vstartup_start)
+  OTG_VUPDATE_PARAM          [0x05047] live 0x01400226 | 60 0x00f70226 | 144 0x00f70208  SET optc1_program_global_sync
+      VUPDATE_OFFSET                            550 =        550          520   (dest.vupdate_offset)
+      VUPDATE_WIDTH                             320          247          247   (dest.vupdate_width)
+  OTG_VREADY_PARAM           [0x05048] live 0x0000012c | 60 0x00000148 | 144 0x00000148  SET optc1_program_global_sync
+      VREADY_OFFSET                             300          328          328   (dest.vready_offset)
+== summary: 39 of 76 fields equal Linux's 60 Hz plan; 0 plan values spill out of their field (want 0)
+Nothing was written.
+testl exit 0

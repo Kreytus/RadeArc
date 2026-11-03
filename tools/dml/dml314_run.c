@@ -383,6 +383,19 @@ int main(int argc, char **argv) {
     rec("dest.vstartup_start", pipes[0].pipe.dest.vstartup_start); rec("dest.vupdate_offset", pipes[0].pipe.dest.vupdate_offset);
     rec("dest.vupdate_width", pipes[0].pipe.dest.vupdate_width); rec("dest.vready_offset", pipes[0].pipe.dest.vready_offset);
     rec("dest.htotal", pipes[0].pipe.dest.htotal); rec("dest.vblank_end", pipes[0].pipe.dest.vblank_end);
+    // dcn20_calculate_dlg_params: unbounded_req = pipe src.unbounded_req_mode; dcn31_calculate_wm_and_dlg_fp
+    // (dcn31_fpu.c): det_buffer_size_kb = get_det_buffer_size_kbytes (halved above 384), compbuf_size_kb =
+    // config_return_buffer_size_in_kbytes - total DET. Programmed by hubp31_set_unbounded_requesting,
+    // dcn31_program_det_size, dcn31_program_compbuf_size.
+    {
+        unsigned det = get_det_buffer_size_kbytes(&dml, pipes, pipe_cnt, 0);
+        if (det > 384) det /= 2;
+        rec("hubbub.det_kb", det);
+        rec("hubbub.compbuf_kb", (unsigned)dml.ip.config_return_buffer_size_in_kbytes - det);
+        rec("hubp.unbounded_req", pipes[0].pipe.src.unbounded_req_mode ? 1u : 0u);
+        printf("== DET %u KB, compbuf %u KB, unbounded_req %d\n", det,
+               (unsigned)dml.ip.config_return_buffer_size_in_kbytes - det, (int)pipes[0].pipe.src.unbounded_req_mode);
+    }
     rec("clk.dispclk_khz", dispclk_khz); rec("clk.dppclk_khz", dppclk_khz); rec("clk.refclk_khz", (unsigned)(refclk_mhz * 1000));
     rec("wm.urgent_ns", (unsigned)wm_urgent); rec("wm.sr_enter_plus_exit_ns", (unsigned)wm_sr_enter);
     rec("wm.sr_exit_ns", (unsigned)wm_sr_exit); rec("wm.pstate_change_ns", (unsigned)wm_pstate);

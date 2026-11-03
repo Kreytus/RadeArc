@@ -109,6 +109,15 @@ EXTRA = [
     ("DCHUBBUB_GLOBAL_TIMER_CNTL", ["DCHUBBUB_GLOBAL_TIMER_REFDIV", "DCHUBBUB_GLOBAL_TIMER_ENABLE"]),
     ("PHYPLLA_PIXCLK_RESYNC_CNTL", ["PHYPLLA_PIXCLK_RESYNC_ENABLE", "PHYPLLA_DEEP_COLOR_DTO_ENABLE_STATUS",
                                     "PHYPLLA_DCCG_DEEP_COLOR_CNTL", "PHYPLLA_PIXCLK_ENABLE"]),
+    # the DET / compressed-buffer split (dcn31_init_crb, dcn31_program_det_size, dcn31_program_compbuf_size in
+    # dcn31_hubbub.c; 64 KB segments) and the requesting mode hubp31_set_unbounded_requesting sets (dcn31_hubp.c)
+    ("DCHUBBUB_DET0_CTRL", ["DET0_SIZE", "DET0_SIZE_CURRENT"]),
+    ("DCHUBBUB_DET1_CTRL", ["DET1_SIZE", "DET1_SIZE_CURRENT"]),
+    ("DCHUBBUB_DET2_CTRL", ["DET2_SIZE", "DET2_SIZE_CURRENT"]),
+    ("DCHUBBUB_DET3_CTRL", ["DET3_SIZE", "DET3_SIZE_CURRENT"]),
+    ("DCHUBBUB_COMPBUF_CTRL", ["COMPBUF_SIZE", "COMPBUF_SIZE_CURRENT", "CONFIG_ERROR"]),
+    ("HUBP0_DCHUBP_CNTL", ["HUBP_UNBOUNDED_REQ_MODE", "HUBP_UNDERFLOW_STATUS"]),
+    ("CURSOR0_0_CURSOR_CONTROL", ["CURSOR_REQ_MODE"]),   # SRI(CURSOR_CONTROL, CURSOR0_, 0), dcn20_hubp.h
 ] + [
     # which HUBP is live (the dry run expects HUBP0 feeding OTG0): DCHUBP_CNTL blank / TTU-disable of all four pipes
     ("HUBP%d_DCHUBP_CNTL" % i, ["HUBP_BLANK_EN", "HUBP_TTU_DISABLE"]) for i in range(4)

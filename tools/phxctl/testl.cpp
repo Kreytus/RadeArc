@@ -73,7 +73,11 @@ int main(void) {
     printf("  DLG refclk (hubbub31_get_dchub_ref_freq): %u kHz -> DML plans for %s\n", refKhz,
            refKhz == 12000 ? "12 MHz (REFDIV 2)" : "24 MHz");
     const PhxDmlVal *p60 = planFor(60, refKhz), *p144 = planFor(144, refKhz);
-    unsigned dc, dp;
+    unsigned dc, dp, det, cb, ub;
+    if (phxDmlGet(p144, "hubbub.det_kb", &det) && phxDmlGet(p144, "hubbub.compbuf_kb", &cb) && phxDmlGet(p144, "hubp.unbounded_req", &ub))
+        // dcn31_program_det_size / dcn31_program_compbuf_size: segments = (KB + 63) / 64 (DCN31_CRB_SEGMENT_SIZE_KB)
+        printf("  Linux plan (60 and 144 Hz alike): DET0 %u KB = %u segments, COMPBUF %u KB = %u segments, unbounded_req %u\n",
+               det, (det + 63) / 64, cb, (cb + 63) / 64, ub);
     if (phxDmlGet(p144, "clk.dispclk_khz", &dc) && phxDmlGet(p144, "clk.dppclk_khz", &dp))
         printf("  144 Hz needs DISPCLK >= %u kHz, DPPCLK >= %u kHz (SMU SetDispclkFreq / SetDppclkFreq)\n", dc, dp);
 

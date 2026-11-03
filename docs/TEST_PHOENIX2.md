@@ -319,3 +319,44 @@ GOP is not Linux, so not every field will match. The check is that the timing fi
 magnitude: `REFCYC_PER_HTOTAL` (DLG refclk cycles per line), `VSTARTUP_START`, `REF_FREQ_TO_PIX_FREQ`. If they are
 about 2× off, the refclk is wrong. If they are unrelated, the field mapping is wrong. Both get fixed before step 2,
 which writes.
+
+**Test L step 1, passed** (package bb5dccd, `hardware/dumps/b650m_8500g/testl.txt`):
+- `DCHUBBUB_GLOBAL_TIMER_CNTL` 0x1001: REFDIV 1, enabled → **DLG refclk 24 MHz**. The 24 MHz plans apply; the
+  12 MHz ones are not needed.
+- HUBP0 is the live pipe (`HUBP_BLANK_EN 0`); HUBP1..3 are blanked. HUBP0 has no underflow
+  (`DCHUBP_CNTL` 0x000f1002: `UNDERFLOW_STATUS 0`).
+- `PHYPLLA_PIXCLK_RESYNC_CNTL` 0x103: resync on, `DCCG_DEEP_COLOR_CNTL` 0 (8 bpc), as `dcn31_program_pix_clk` sets.
+- 39 of 76 fields equal Linux's 60 Hz plan, and no plan value spills out of its field.
+- The field mapping is right. GOP wrote exactly what Linux writes in:
+  - `HUBPREQ_DEBUG_DB` = 0x100 (`hubp2_vready_at_or_After_vsync`'s constant)
+  - `DLG_V_BLANK_END` 41
+  - `VUPDATE_OFFSET` 550
+  - `VRATIO_PREFETCH` 0x80000 (1.0)
+  - the QoS levels (8, 14)
+  - `DCN_DMDATA_VM_CNTL` 0x80000000
+- GOP leaves most DLG / TTU fields at 0: `REFCYC_PER_HTOTAL`, `REF_FREQ_TO_PIX_FREQ`, `MIN_DST_Y_NEXT_START`, the TTU
+  delivery rates. It also runs HUBP0 with `HUBP_TTU_DISABLE 1`, which Linux clears when it unblanks
+  (`hubp2_set_blank`: `HUBP_TTU_DISABLE` 0). So GOP's pipe runs without the TTU deadline logic, and those fields are
+  unused.
+- Linux's own values check out by hand at 24 MHz:
+  - `REFCYC_PER_HTOTAL` 91022 / 256 = 355.6 refclk cycles = 2200 px / 148.5 MHz
+  - `REF_FREQ_TO_PIX_FREQ` 84733 / 2^19 = 24 / 148.5
+- GOP and Linux differ in:
+  - `VSTARTUP` 13 vs 44
+  - `VREADY` 300 vs 328, `VUPDATE_WIDTH` 320 vs 247
+  - `DST_Y_PREFETCH` 40 vs 28
+  - the request sizes: GOP sets only `CHUNK_SIZE`; Linux also sets min chunk 3, meta 1, DPTE/VM group 3,
+    PTE row height 4
+- DML plans the pipe with a 192 KB DET and unbounded requesting. GOP has `HUBP_UNBOUNDED_REQ_MODE` 0. testl now also
+  reads `DCHUBBUB_DET0..3_CTRL`, `DCHUBBUB_COMPBUF_CTRL` and `CURSOR_REQ_MODE`, and prints Linux's plan (DET0
+  3 segments, COMPBUF 25 segments, unbounded 1). Step 2 has to program those too, or the DML request sizes don't fit
+  the buffer.
+
+**Step 2 (next, writes):** reprogram the *same* 60 Hz mode with Linux's values. No clock, PLL or PHY change:
+- save every register first
+- program them under `OTG_MASTER_UPDATE_LOCK` (`optc1_lock`), in Linux's order
+- check `HUBP_UNDERFLOW_STATUS` and that `OTG_FRAME_COUNT` keeps running
+- restore the saved words automatically after 15 s
+
+This proves the write path and Linux's HUBP values on a mode that already works. The clock and timing change for
+144 Hz comes after.

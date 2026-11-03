@@ -1102,6 +1102,73 @@ bool NVDisplayPipe::isTransactionComplete(IOAccelDisplayPipeTransaction2 *)
     return false;
 }
 
+// Damage-only copy (debug.nvaccel_iop_damage, default 1). On the 8500G the scan-out's CPU view takes stores at ~190
+// MB/s whatever its mapping asks for (2026-11-03 bench: the 1920x1080 source read in 420 us, the full copy took 44 ms:
+// ~21 fps, the cursor lagged). A cached shadow of what the scan-out holds is kept per head, each frame is compared
+// against it in 64-byte steps, and only the steps that changed are stored (a moving cursor touches a few kB). The
+// shadow is dropped (the next frame writes every pixel) when the scan-out, its geometry or format changes, after a
+// flip, when another copy holds it, and on debug.nvaccel_iop_full=1. Plain loads and 8/4-byte movnti only: no SSE, so
+// no XMM state to save. Setting debug.nvaccel_iop_damage=0 goes back to the full copy below.
+static int gIopDamage = 1, gIopFull;
+static SInt64 gIopDamageBytes, gIopDamageBytesSum, gCntIopDamageFull, gCntIopDamageBusy;
+struct NVIopShadow { uint32_t *buf; size_t bytes; const void *dst; unsigned words, h, dpr; bool l10r; volatile bool valid; volatile UInt32 busy; };
+static NVIopShadow gIopShadow[kNvMaxFB];
+
+static inline uint32_t nvIopPx(uint32_t v, bool l10r)
+{
+    return l10r ? 0xff000000u | ((v >> 6) & 0xff0000u) | ((v >> 4) & 0xff00u) | ((v >> 2) & 0xffu) : v;
+}
+
+static void nvIopShadowDrop(unsigned head) { if (head < kNvMaxFB) gIopShadow[head].valid = false; }
+
+// Bytes stored, or -1 when the shadow is unavailable (the caller does the full copy). Thread context only: may allocate.
+static SInt64 nvIopCopyDamage(unsigned head, const volatile unsigned int *src, unsigned spr, volatile unsigned int *d,
+                              unsigned dpr, unsigned words, unsigned h, bool l10r)
+{
+    if (!gIopDamage || head >= kNvMaxFB || !words || !h) { nvIopShadowDrop(head); return -1; }
+    NVIopShadow &sh = gIopShadow[head];
+    if (!OSCompareAndSwap(0, 1, &sh.busy)) { sh.valid = false; OSAddAtomic64(1, &gCntIopDamageBusy); return -1; }
+    const size_t bytes = (size_t)words * 4 * h;
+    if (sh.buf && sh.bytes != bytes) { IOFreeAligned(sh.buf, sh.bytes); sh.buf = nullptr; }
+    if (!sh.buf) {
+        sh.buf = (uint32_t *)IOMallocAligned(bytes, 64);
+        if (!sh.buf) { sh.busy = 0; return -1; }
+        sh.bytes = bytes; sh.valid = false;
+    }
+    if (sh.dst != (const void *)d || sh.words != words || sh.h != h || sh.dpr != dpr || sh.l10r != l10r) sh.valid = false;
+    sh.dst = (const void *)d; sh.words = words; sh.h = h; sh.dpr = dpr; sh.l10r = l10r;
+    const bool force = !sh.valid || gIopFull;
+    if (gIopFull) gIopFull = 0;
+    if (force) OSAddAtomic64(1, &gCntIopDamageFull);
+    sh.valid = true;   // cleared again by a flip or a busy collision while this runs; the next frame then rewrites all
+    SInt64 wrote = 0;
+    for (unsigned y = 0; y < h; y++) {
+        const volatile unsigned int *sp = src + (unsigned long)y * spr;
+        unsigned int *dp = (unsigned int *)(uintptr_t)(d + (unsigned long)y * dpr);
+        uint32_t *hp = sh.buf + (unsigned long)y * words;
+        for (unsigned x = 0; x < words; x += 16) {
+            const unsigned n = words - x < 16 ? words - x : 16;
+            uint32_t t[16], diff = force ? 1u : 0u;
+            for (unsigned i = 0; i < n; i++) { t[i] = nvIopPx(sp[x + i], l10r); diff |= t[i] ^ hp[x + i]; }
+            if (!diff) continue;
+            unsigned i = 0;
+            if (!(((uintptr_t)(dp + x)) & 7)) {
+                for (; i + 1 < n; i += 2) {
+                    const uint64_t v = (uint64_t)t[i] | (uint64_t)t[i + 1] << 32;
+                    __asm__ __volatile__("movnti %1, %0" : "=m"(*(uint64_t *)(void *)(dp + x + i)) : "r"(v));
+                }
+            }
+            for (; i < n; i++) __asm__ __volatile__("movnti %1, %0" : "=m"(dp[x + i]) : "r"(t[i]));
+            for (i = 0; i < n; i++) hp[x + i] = t[i];
+            wrote += (SInt64)n * 4;
+        }
+    }
+    __asm__ __volatile__("sfence" ::: "memory");
+    sh.busy = 0;
+    gIopDamageBytes = wrote; OSAddAtomic64(wrote, &gIopDamageBytesSum);
+    return wrote;
+}
+
 static void nvAccelSurfScanoutSync(IOSurface *s);
 static bool nvAccelSurfCopyReady(IOSurface *s, unsigned head);
 static bool nvAccelIopFlip(IOService *fb, unsigned head, IOSurface *s, void *pipe);
@@ -1144,6 +1211,7 @@ IOReturn NVDisplayPipe::performTransaction(IOAccelDisplayPipeTransaction2 *txn)
         if ((unsigned long long)h * pitch > vm->fBytes) NVIOP_FAIL(kIOReturnOverrun, "resource %ux%u pitch %u exceeds its %llu bytes", w, h, pitch, (unsigned long long)vm->fBytes);
         src = (const volatile unsigned int *)vm->fKva; fromRes = true;
     } else if (s && nvAccelIopFlip(fb, head, s, this)) {
+        nvIopShadowDrop(head);   // the panel now scans another buffer: the shadow no longer says what it holds
         OSAddAtomic64(1, &gCntIopSrcSurf); OSAddAtomic64(1, &gCntIopOk); OSAddAtomic64(1, &gCntIopOkHead[head]);
         return kIOReturnSuccess;
     } else if (s) {
@@ -1206,9 +1274,10 @@ IOReturn NVDisplayPipe::performTransaction(IOAccelDisplayPipeTransaction2 *txn)
     // Non-temporal stores (movnti, general registers only): the scan-out's system-RAM view (PhxFB) maps write-back
     // whatever cache mode it asks for, and plain stores left the frame in the CPU cache while the panel scanned the stale
     // DRAM under it, in stripes (2026-10-20). Through the BAR (uncached) they behave as plain stores.
+    const bool damaged = nvIopCopyDamage(head, src, spr, d, dpr, words, h, l10r) >= 0;
     const bool wide = ((((uintptr_t)src | (uintptr_t)d) & 7) == 0) && !(spr & 1) && !(dpr & 1);
     const bool sse = gIopSse && ((((uintptr_t)src | (uintptr_t)d) & 15) == 0) && !(spr & 3) && !(dpr & 3);
-    for (unsigned y = 0; y < h; y++) {
+    for (unsigned y = 0; !damaged && y < h; y++) {
         const volatile unsigned int *sp = src + (unsigned long)y * spr;
         volatile unsigned int *dp = d + (unsigned long)y * dpr;
         unsigned x = 0;
@@ -1340,6 +1409,12 @@ static SInt64 gCntIopCopySkip;
 NVACCEL_CNT(nvaccel_iop_copy_skip,    gCntIopCopySkip,    "frames kept on the panel because the surface's newest pixels were not yet in system memory");
 SYSCTL_INT(_debug, OID_AUTO, nvaccel_iop_bench, CTLFLAG_RW | CTLFLAG_LOCKED, &gIopBench, 0, "1 = time a read-only pass over the next copied frame's source (nvaccel_iop_read_us)");
 SYSCTL_INT(_debug, OID_AUTO, nvaccel_iop_sse, CTLFLAG_RW | CTLFLAG_LOCKED, &gIopSse, 0, "1 = copy frames with SSE4.1 streaming loads (fast from write-combined surfaces), 0 = 8-byte loads (default until proven)");
+SYSCTL_INT(_debug, OID_AUTO, nvaccel_iop_damage, CTLFLAG_RW | CTLFLAG_LOCKED, &gIopDamage, 0, "1 = store only the parts of a copied frame that changed (cached shadow per head), 0 = store every pixel");
+SYSCTL_INT(_debug, OID_AUTO, nvaccel_iop_full, CTLFLAG_RW | CTLFLAG_LOCKED, &gIopFull, 0, "1 = the next copied frame stores every pixel (repairs a panel written behind the shadow's back)");
+NVACCEL_CNT(nvaccel_iop_damage_bytes, gIopDamageBytes,    "bytes the last damage-only copy stored");
+NVACCEL_CNT(nvaccel_iop_damage_bytes_sum, gIopDamageBytesSum, "bytes damage-only copies stored, summed");
+NVACCEL_CNT(nvaccel_iop_damage_full,  gCntIopDamageFull,  "damage-only copies that stored every pixel (new shadow, flip, geometry change, nvaccel_iop_full)");
+NVACCEL_CNT(nvaccel_iop_damage_busy,  gCntIopDamageBusy,  "copies that found the shadow held by another copy and stored every pixel");
 NVACCEL_CNT(nvaccel_iop_read_us,      gIopReadUs,         "the last bench: microseconds to read one frame's source");
 NVACCEL_CNT(nvaccel_iop_copy_us,      gIopCopyUs,         "microseconds the last copied frame took");
 NVACCEL_CNT(nvaccel_iop_copy_us_max,  gIopCopyUsMax,      "the slowest copied frame, microseconds");
@@ -1497,6 +1572,9 @@ static void nvaccelInstallSysctl(void)
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_empty);
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_src_res);    sysctl_register_oid(&sysctl__debug_nvaccel_iop_src_surf);
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_blank);      sysctl_register_oid(&sysctl__debug_nvaccel_iop_copy_skip);
+    sysctl_register_oid(&sysctl__debug_nvaccel_iop_damage); sysctl_register_oid(&sysctl__debug_nvaccel_iop_full);
+    sysctl_register_oid(&sysctl__debug_nvaccel_iop_damage_bytes); sysctl_register_oid(&sysctl__debug_nvaccel_iop_damage_bytes_sum);
+    sysctl_register_oid(&sysctl__debug_nvaccel_iop_damage_full); sysctl_register_oid(&sysctl__debug_nvaccel_iop_damage_busy);
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_bench);      sysctl_register_oid(&sysctl__debug_nvaccel_iop_read_us);
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_sse);
     sysctl_register_oid(&sysctl__debug_nvaccel_iop_copy_us);    sysctl_register_oid(&sysctl__debug_nvaccel_iop_copy_us_max);

@@ -45,3 +45,11 @@ jobs:
                  "415580 1920 48 32 2080 1080 3 4 1110"; do
           ./build/dml/dml314_run $m | sed -n 10,20p
         done
+
+    - name: Generated DCN 3.1.4 register table and DML plans are current
+      shell: bash
+      run: |
+        bash tools/dml/fetch_regs.sh
+        python3 tools/dml/gen_dcn314_regs.py
+        bash tools/dml/gen_plans.sh
+        git diff --exit-code -- src/amd/phx_dcn314_prog_regs.h src/amd/phx_dml314_plans.h

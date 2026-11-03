@@ -39,6 +39,8 @@ jobs:
           -o modecheck modecheck.cpp -framework IOKit -framework CoreFoundation
         clang++ -arch x86_64 -std=c++17 -O2 -Wall -Wextra -Werror -o clkinfo clkinfo.cpp \
           -framework IOKit -framework CoreFoundation
+        clang++ -arch x86_64 -std=c++17 -O2 -Wall -Wextra -Werror -I../../src/amd -o testl testl.cpp \
+          -framework IOKit -framework CoreFoundation
 
     - name: Check the binaries
       run: |
@@ -49,14 +51,14 @@ jobs:
           plutil -lint "$k/Contents/Info.plist"
         done
         echo "PhxBringup build: $(grep -o 'PHX_KEXT_BUILD [0-9]*' src/phxbringup/PhxBringup.cpp)"
-        for t in phxctl mesboot phxfw dmcubload modecheck clkinfo; do file tools/phxctl/$t; done
+        for t in phxctl mesboot phxfw dmcubload modecheck clkinfo testl; do file tools/phxctl/$t; done
 
     - name: Package
       run: |
         mkdir -p out
         ditto src/phxbringup/build/PhxBringup.kext out/PhxBringup.kext
         ditto src/phxaccel/build/PhxAccel.kext out/PhxAccel.kext
-        mkdir -p out/phxctl && cp tools/phxctl/phxctl tools/phxctl/mesboot tools/phxctl/phxfw tools/phxctl/dmcubload tools/phxctl/modecheck tools/phxctl/clkinfo out/phxctl/
+        mkdir -p out/phxctl && cp tools/phxctl/phxctl tools/phxctl/mesboot tools/phxctl/phxfw tools/phxctl/dmcubload tools/phxctl/modecheck tools/phxctl/clkinfo tools/phxctl/testl out/phxctl/
         echo "commit ${GITHUB_SHA}" > out/BUILD.txt
 
     - uses: actions/upload-artifact@v4

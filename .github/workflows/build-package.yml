@@ -90,6 +90,9 @@ jobs:
         # Phase 3b: the clocks and the SMU DPM table (DML inputs)
         cp "$K"/phxctl/clkinfo "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no clkinfo in the kext build yet"
         cp tools/phxctl/testclk.sh "$P/"
+        # Phase 3b Test L: the read-only dry run (HUBP0/OTG0 against Linux's DML)
+        cp "$K"/phxctl/testl "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no testl in the kext build yet"
+        cp tools/phxctl/testl.sh "$P/"
         cp tools/phxctl/bocheck.sh "$P/"
         cp tools/phxctl/update.sh "$P/"
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"

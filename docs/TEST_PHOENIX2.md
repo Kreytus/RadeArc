@@ -289,3 +289,33 @@ Expected in `~/Desktop/testclk.txt`:
   - SOCCLK 400…1200 MHz
   - 2 DF P-states: FCLK 2000 / MemClk 2600, and 500 / 1000
 - So 144 Hz (335.77 MHz pixels) needs a higher DISPCLK, set through SMU `SetDispclkFreq`. The value comes from DML.
+
+## Test L, step 1: dry run of the 144 Hz switch (read-only, Phase 3b)
+
+From the newest install package (with `testl.sh` in its top folder):
+
+```bash
+cd ~/Desktop/radearc-package && bash testl.sh
+```
+
+No reboot, nothing is written. `testl` reads every HUBP0 / OTG0 register the 144 Hz switch will write: the fields
+Linux programs from DML on DCN 3.1.4 (`hubp3_setup`, `hubp2_setup_interdependent`, `optc1_program_global_sync`).
+Per field it prints the live value GOP left, Linux's DML value for 60 Hz and Linux's DML value for 144 Hz. Addresses
+and fields come from `src/amd/phx_dcn314_prog_regs.h`, generated from Linux's headers by
+`tools/dml/gen_dcn314_regs.py`. The DML values come from `src/amd/phx_dml314_plans.h` (`tools/dml/gen_plans.sh`).
+CI regenerates both files and fails if they differ from the committed ones.
+
+Expected in `~/Desktop/testl.txt`:
+- `DCHUBBUB_GLOBAL_TIMER_CNTL`: REFDIV and ENABLE, then `DLG refclk ... kHz`. This picks the 24 or 12 MHz plan.
+- `PHYPLLA_PIXCLK_RESYNC_CNTL`: `DCCG_DEEP_COLOR_CNTL` 0 at 8 bpc.
+- `HUBP0..3_DCHUBP_CNTL`: HUBP0 not blanked (`HUBP_BLANK_EN 0`), the others blanked. HUBP0 feeds OTG0.
+- 44 registers, each with its fields:
+  - `live | 60 | 144` columns
+  - `=` where GOP's value equals Linux's 60 Hz value
+- `summary: N of 76 fields equal Linux's 60 Hz plan; 0 plan values spill out of their field`
+- `testl exit 0`
+
+GOP is not Linux, so not every field will match. The check is that the timing fields have the same order of
+magnitude: `REFCYC_PER_HTOTAL` (DLG refclk cycles per line), `VSTARTUP_START`, `REF_FREQ_TO_PIX_FREQ`. If they are
+about 2× off, the refclk is wrong. If they are unrelated, the field mapping is wrong. Both get fixed before step 2,
+which writes.

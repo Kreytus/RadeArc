@@ -244,6 +244,23 @@ One unsplit pipe in every mode, so the single-pipe takeover fits. GOP runs DISPC
 would use 152.4 MHz, so the formula is in range. For 144 Hz, DISPCLK must be raised to ≥ 342.857 MHz through SMU
 `SetDispclkFreq` (343 MHz after `khz_to_mhz_ceil`), and DPPCLK through `SetDppclkFreq` (338 MHz).
 
+**Done (2026-11-03): the register side.**
+- `tools/dml/gen_dcn314_regs.py` generates `src/amd/phx_dcn314_prog_regs.h`:
+  - every HUBP0 / OTG0 field Linux programs from DML, in Linux's order (`hubp3_setup`, `hubp2_setup_interdependent`,
+    `optc1_program_global_sync`)
+  - addresses from `dcn_3_1_4_offset.h`, shifts and masks from `dcn_3_1_4_sh_mask.h`
+  - the block for each register from expanding `HUBP_REG_LIST_DCN30` / `OPTC_COMMON_REG_LIST_DCN3_14`, as `SRI()` does
+  - plus read-only context: `DCHUBBUB_GLOBAL_TIMER_CNTL`, `PHYPLLA_PIXCLK_RESYNC_CNTL`, `DCHUBP_CNTL` of all four HUBPs
+- `dml314_run --emit` writes its values as C tables; `tools/dml/gen_plans.sh` makes `src/amd/phx_dml314_plans.h`
+  (60 and 144 Hz, refclk 24 and 12 MHz).
+- `src/amd/phx_dcn314_plan.h` composes the register words: REG_SET starts from 0, REG_UPDATE keeps the unnamed bits.
+- `tests/test_phx_dcn314_plan.cpp` checks:
+  - every field of the 4 plans has a value and nothing spills out of its field
+  - REG_UPDATE keeps the other bits
+  - the refclk rule follows `hubbub31_get_dchub_ref_freq`
+  - the vready rule follows `hubp2_vready_at_or_After_vsync`
+- `tools/phxctl/testl.cpp` is Test L's read-only dry run (docs/TEST_PHOENIX2.md).
+
 Earlier plan (kept for reference):
 1. Feed DML its inputs as `dcn314_fpu.c` does: `dcn3_14_ip`, `dcn3_14_soc`, and the clock table from the SMU DPM
    table (`dcn314_clk_mgr_helper_populate_bw_params`). Read the DPM table from the SMU (TransferTableSmu2Dram) in a

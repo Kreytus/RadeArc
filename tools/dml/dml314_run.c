@@ -91,6 +91,11 @@ static int populate_bw_params(struct clk_entry *e) {
     return (int)n;
 }
 
+// --emit FILE NAME: every value below also goes into a C table appended to FILE, for testl (phx_dml314_plans.h)
+static struct { const char *name; unsigned v; } g_emit[256];
+static int g_nemit;
+static void rec(const char *name, unsigned v) { if (g_nemit < 256) { g_emit[g_nemit].name = name; g_emit[g_nemit].v = v; g_nemit++; } }
+
 int main(int argc, char **argv) {
     // the mode: EDID DTD numbers (phx_dcn_timing.h prints them; modecheck's "mode N" lines)
     if (argc < 10) {
@@ -99,7 +104,13 @@ int main(int argc, char **argv) {
     }
     const unsigned pix_khz = atoi(argv[1]), ha = atoi(argv[2]), hfp = atoi(argv[3]), hs = atoi(argv[4]), ht = atoi(argv[5]);
     const unsigned va = atoi(argv[6]), vfp = atoi(argv[7]), vs = atoi(argv[8]), vt = atoi(argv[9]);
-    const int refdiv2 = argc > 10 && !strcmp(argv[10], "--refdiv2");
+    int refdiv2 = 0;
+    const char *emit_file = NULL, *emit_name = NULL;
+    for (int i = 10; i < argc; i++) {
+        if (!strcmp(argv[i], "--refdiv2")) refdiv2 = 1;
+        else if (!strcmp(argv[i], "--emit") && i + 2 < argc) { emit_file = argv[i + 1]; emit_name = argv[i + 2]; i += 2; }
+        else { fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
+    }
     const double refclk_mhz = (refdiv2 ? 12000 : 24000) / 1000.0;
 
     static struct display_mode_lib dml;
@@ -333,7 +344,7 @@ int main(int argc, char **argv) {
     printf("  pte_meta_urgent %.0f  frac_urg_bw_nom %.0f  frac_urg_bw_flip %.0f  urgent_latency %.0f\n", wm_pte, frac_nom,
            frac_flip, urg_lat);
     printf("== DLG regs\n");
-#define D(f) printf("  dlg.%-40s %u\n", #f, (unsigned)dlg.f)
+#define D(f) (printf("  dlg.%-40s %u\n", #f, (unsigned)dlg.f), rec("dlg." #f, (unsigned)dlg.f))
     D(refcyc_h_blank_end); D(dlg_vblank_end); D(min_dst_y_next_start); D(min_dst_y_next_start_us); D(refcyc_per_htotal);
     D(refcyc_x_after_scaler); D(dst_y_after_scaler); D(dst_y_prefetch); D(dst_y_per_vm_vblank); D(dst_y_per_row_vblank);
     D(dst_y_per_vm_flip); D(dst_y_per_row_flip); D(ref_freq_to_pix_freq); D(vratio_prefetch); D(vratio_prefetch_c);
@@ -346,10 +357,10 @@ int main(int argc, char **argv) {
     D(refcyc_per_line_delivery_l); D(refcyc_per_line_delivery_c); D(refcyc_per_vm_group_vblank);
     D(refcyc_per_vm_group_flip); D(refcyc_per_vm_req_vblank); D(refcyc_per_vm_req_flip); D(dst_y_offset_cur0);
     D(chunk_hdl_adjust_cur0); D(dst_y_delta_drq_limit); D(xfc_reg_transfer_delay); D(xfc_reg_precharge_delay);
-    D(xfc_reg_remote_surface_flip_latency); D(xfc_reg_prefetch_margin);
+    D(xfc_reg_remote_surface_flip_latency); D(xfc_reg_prefetch_margin); D(refcyc_per_vm_dmdata);
 #undef D
     printf("== TTU regs\n");
-#define T(f) printf("  ttu.%-40s %u\n", #f, (unsigned)ttu.f)
+#define T(f) (printf("  ttu.%-40s %u\n", #f, (unsigned)ttu.f), rec("ttu." #f, (unsigned)ttu.f))
     T(qos_level_low_wm); T(qos_level_high_wm); T(min_ttu_vblank); T(qos_level_flip); T(refcyc_per_req_delivery_l);
     T(refcyc_per_req_delivery_c); T(refcyc_per_req_delivery_cur0); T(refcyc_per_req_delivery_cur1);
     T(refcyc_per_req_delivery_pre_l); T(refcyc_per_req_delivery_pre_c); T(refcyc_per_req_delivery_pre_cur0);
@@ -360,9 +371,29 @@ int main(int argc, char **argv) {
     printf("== RQ regs\n");
     printf("  rq.drq_expansion_mode %u prq %u mrq %u crq %u plane1_base_address %u\n", rq.drq_expansion_mode,
            rq.prq_expansion_mode, rq.mrq_expansion_mode, rq.crq_expansion_mode, rq.plane1_base_address);
-#define R(s, f) printf("  rq.%s.%-28s %u\n", #s, #f, (unsigned)rq.s.f)
+#define R(s, f) (printf("  rq.%s.%-28s %u\n", #s, #f, (unsigned)rq.s.f), rec("rq." #s "." #f, (unsigned)rq.s.f))
     R(rq_regs_l, chunk_size); R(rq_regs_l, min_chunk_size); R(rq_regs_l, meta_chunk_size); R(rq_regs_l, min_meta_chunk_size);
     R(rq_regs_l, dpte_group_size); R(rq_regs_l, mpte_group_size); R(rq_regs_l, swath_height); R(rq_regs_l, pte_row_height_linear);
+    R(rq_regs_c, chunk_size); R(rq_regs_c, min_chunk_size); R(rq_regs_c, meta_chunk_size); R(rq_regs_c, min_meta_chunk_size);
+    R(rq_regs_c, dpte_group_size); R(rq_regs_c, mpte_group_size); R(rq_regs_c, swath_height); R(rq_regs_c, pte_row_height_linear);
 #undef R
+    rec("rq.drq_expansion_mode", rq.drq_expansion_mode); rec("rq.prq_expansion_mode", rq.prq_expansion_mode);
+    rec("rq.mrq_expansion_mode", rq.mrq_expansion_mode); rec("rq.crq_expansion_mode", rq.crq_expansion_mode);
+    rec("rq.plane1_base_address", rq.plane1_base_address);
+    rec("dest.vstartup_start", pipes[0].pipe.dest.vstartup_start); rec("dest.vupdate_offset", pipes[0].pipe.dest.vupdate_offset);
+    rec("dest.vupdate_width", pipes[0].pipe.dest.vupdate_width); rec("dest.vready_offset", pipes[0].pipe.dest.vready_offset);
+    rec("dest.htotal", pipes[0].pipe.dest.htotal); rec("dest.vblank_end", pipes[0].pipe.dest.vblank_end);
+    rec("clk.dispclk_khz", dispclk_khz); rec("clk.dppclk_khz", dppclk_khz); rec("clk.refclk_khz", (unsigned)(refclk_mhz * 1000));
+    rec("wm.urgent_ns", (unsigned)wm_urgent); rec("wm.sr_enter_plus_exit_ns", (unsigned)wm_sr_enter);
+    rec("wm.sr_exit_ns", (unsigned)wm_sr_exit); rec("wm.pstate_change_ns", (unsigned)wm_pstate);
+    if (emit_file) {
+        FILE *f = fopen(emit_file, "a");
+        if (!f) { perror(emit_file); return 1; }
+        fprintf(f, "// dml314_run %s %u %u %u %u %u %u %u %u%s\n", argv[1], ha, hfp, hs, ht, va, vfp, vs, vt, refdiv2 ? " --refdiv2" : "");
+        fprintf(f, "static const PhxDmlVal %s[] = {\n", emit_name);
+        for (int i = 0; i < g_nemit; i++) fprintf(f, "    {\"%s\", %u},\n", g_emit[i].name, g_emit[i].v);
+        fprintf(f, "    {nullptr, 0},\n};\n\n");
+        fclose(f);
+    }
     return 0;
 }

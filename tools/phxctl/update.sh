@@ -33,14 +33,32 @@ show_status() {
     [ -e "$G/phxboot-off" ] && say "kill switch: ON ($G/phxboot-off): the GPU driver is off"
 }
 
-# OpenCore's EFI partition: the one holding EFI/OC/Kexts/PhxBringup.kext
+# Where OpenCore's PhxBringup.kext lives: EFI partitions (mounted if needed) and every mounted volume (an OpenCore USB
+# drive such as "INST") that holds EFI/OC/Kexts/PhxBringup.kext. With more than one, the one OpenCore booted from wins
+# (its NVRAM boot-path names the partition's UUID), else you choose.
 find_efi() {
+    local cands=() d mp v bp u
     for d in $(diskutil list | awk '/EFI/ {print $NF}'); do
         mp=$(diskutil info "$d" 2>/dev/null | awk -F': *' '/Mount Point/ {print $2}')
         [ -n "$mp" ] || { sudo diskutil mount "$d" >/dev/null 2>&1; mp=$(diskutil info "$d" | awk -F': *' '/Mount Point/ {print $2}'); }
-        [ -n "$mp" ] && [ -d "$mp/EFI/OC/Kexts/PhxBringup.kext" ] && { echo "$mp"; return 0; }
+        [ -n "$mp" ] && [ -d "$mp/EFI/OC/Kexts/PhxBringup.kext" ] && cands+=("$mp")
     done
-    return 1
+    for v in /Volumes/*; do
+        [ -d "$v/EFI/OC/Kexts/PhxBringup.kext" ] || continue
+        case " ${cands[*]-} " in *" $v "*) ;; *) cands+=("$v") ;; esac
+    done
+    [ ${#cands[@]} -gt 0 ] || return 1
+    [ ${#cands[@]} -eq 1 ] && { echo "${cands[0]}"; return 0; }
+    bp=$(nvram 4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:boot-path 2>/dev/null | tr 'a-f' 'A-F')
+    for v in "${cands[@]}"; do
+        u=$(diskutil info "$v" 2>/dev/null | awk -F': *' '/Partition UUID/ {print $2}' | tr 'a-f' 'A-F')
+        [ -n "$u" ] && case "$bp" in *"$u"*) echo "$v"; return 0 ;; esac
+    done
+    say "PhxBringup.kext is in more than one OpenCore EFI:" >&2
+    local i=1; for v in "${cands[@]}"; do say "  $i) $v" >&2; i=$((i + 1)); done
+    read -r -p "Which one does this Mac boot from? (number) " i
+    [ -n "${cands[$((i - 1))]:-}" ] || return 1
+    echo "${cands[$((i - 1))]}"
 }
 
 install_pkg() {   # $1 = unpacked package folder

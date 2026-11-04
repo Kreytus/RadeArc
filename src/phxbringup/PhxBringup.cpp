@@ -20,12 +20,13 @@
 #include <libkern/OSAtomic.h>
 #include <pexpert/pexpert.h>
 #include <sys/sysctl.h>
+#include <sys/proc.h>
 
 #include "PhxNativeABI.h"
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 44u
+#define PHX_KEXT_BUILD 45u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
@@ -78,6 +79,40 @@ SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_wire_err, CTLFLAG_RD | CTLFLAG_LOCKED, 
             "IOReturn of the last read-write wiring that failed");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_host_wire_err_ro, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gHostWireErrRo, 0,
             "IOReturn of the last read-only wiring that failed");
+// debug.phxbo_clients: who holds the BOs. WindowServer aborted after 30 minutes on a kernel mapping refused for lack of
+// space, with IOBufferMemoryDescriptors (one per BO) growing by ~65 a minute (2026-11-04); this tells which process
+// keeps them. One slot per open client: pid, name, live handles and bytes, BOs created and freed since it opened.
+struct PhxClientStat { volatile SInt32 pid; char name[20]; volatile SInt32 handles; volatile SInt64 bytes; volatile SInt64 creates, frees; };
+static PhxClientStat gClientStat[32];
+static int phxClientSlotTake() {
+    const int pid = proc_selfpid();
+    for (int i = 0; i < 32; i++)
+        if (OSCompareAndSwap(0, (UInt32)(pid ? pid : -1), (volatile UInt32 *)&gClientStat[i].pid)) {
+            gClientStat[i].handles = 0; gClientStat[i].bytes = 0; gClientStat[i].creates = 0; gClientStat[i].frees = 0;
+            proc_selfname(gClientStat[i].name, sizeof gClientStat[i].name);
+            return i;
+        }
+    return -1;
+}
+static int phxboClientsSysctl SYSCTL_HANDLER_ARGS {
+    char buf[1600];
+    size_t n = 0;
+    SInt64 th = 0, tb = 0;
+    n += snprintf(buf + n, sizeof buf - n, "\n  pid name                 live   MiB    created      freed");
+    for (int i = 0; i < 32 && n < sizeof buf - 80; i++) {
+        const PhxClientStat &c = gClientStat[i];
+        if (!c.pid) continue;
+        th += c.handles; tb += c.bytes;
+        n += snprintf(buf + n, sizeof buf - n, "\n%5d %-20s %5d %5lld %10lld %10lld", (int)c.pid, c.name, (int)c.handles,
+                      (long long)(c.bytes >> 20), (long long)c.creates, (long long)c.frees);
+    }
+    if (n < sizeof buf - 60)
+        n += snprintf(buf + n, sizeof buf - n, "\n  all clients: %lld live BOs, %lld MiB", (long long)th, (long long)(tb >> 20));
+    return sysctl_handle_string(oidp, buf, n + 1, req);
+}
+SYSCTL_PROC(_debug, OID_AUTO, phxbo_clients, CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_LOCKED, nullptr, 0, phxboClientsSysctl, "A",
+            "per open client: pid, name, live BOs, MiB, BOs created and freed");
+
 static void notePeak(volatile UInt32 *peak, UInt32 v);
 static void hostBytes(SInt64 delta) {
     const SInt64 now = OSAddAtomic64(delta, &gHostBytes) + delta;
@@ -348,7 +383,15 @@ private:
         }
         return 0;
     }
-    void handleTaken() { notePeak(&gBoPeakHandles, ++handlesUsed); }
+    void handleTaken(uint64_t size) {
+        notePeak(&gBoPeakHandles, ++handlesUsed);
+        if (statSlot >= 0) {
+            OSIncrementAtomic(&gClientStat[statSlot].handles);
+            OSAddAtomic64((SInt64)size, &gClientStat[statSlot].bytes);
+            OSAddAtomic64(1, &gClientStat[statSlot].creates);
+        }
+    }
+    int statSlot{-1};   // gClientStat slot (debug.phxbo_clients), -1 = none free
     task_t task{nullptr};
     uint64_t emitted{0};
     uint32_t pendFenceHandle{0}, pendFenceOffset{0};
@@ -446,6 +489,7 @@ void PhxBringup::stop(IOService *provider) {
         sysctl_unregister_oid(&sysctl__debug_phxbo_maps_full);
         sysctl_unregister_oid(&sysctl__debug_phxbo_nomem);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_handles);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_clients);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_maps);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_cap_mb);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_nomem);
@@ -1479,6 +1523,7 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxbo_maps_full);
         sysctl_register_oid(&sysctl__debug_phxbo_nomem);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_handles);
+        sysctl_register_oid(&sysctl__debug_phxbo_clients);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_maps);
         sysctl_register_oid(&sysctl__debug_phxbo_host_cap_mb);
         sysctl_register_oid(&sysctl__debug_phxbo_host_nomem);
@@ -1516,6 +1561,7 @@ bool IOAccelPhxNativeClient::initWithTask(task_t owningTask, void *securityID, U
         return false;
     privileged = clientHasPrivilege(owningTask, kIOClientPrivilegeAdministrator) == kIOReturnSuccess;
     task = owningTask;
+    statSlot = phxClientSlotTake();   // initWithTask runs in the opening process (IOServiceOpen)
     lock = IOLockAlloc();
     bos = static_cast<Bo *>(IOMallocZero(sizeof(Bo) * PHXN_MAX_BOS));
     maps = static_cast<Map *>(IOMallocZero(sizeof(Map) * kMaxMaps));
@@ -1572,6 +1618,7 @@ void IOAccelPhxNativeClient::free() {
         IOFree(maps, sizeof(Map) * kMaxMaps);
     if (lock)
         IOLockFree(lock);
+    if (statSlot >= 0) { gClientStat[statSlot].pid = 0; statSlot = -1; }
     IOUserClient::free();
 }
 
@@ -1788,7 +1835,7 @@ IOReturn IOAccelPhxNativeClient::doBoCreate(IOExternalMethodArguments *a) {
     bzero(md->getBytesNoCopy(), size);
     *pool += size;
     bos[h] = Bo{md, size, domain, bits, static_cast<uint8_t *>(md->getBytesNoCopy()), false};
-    handleTaken();
+    handleTaken(size);
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
     a->scalarOutput[2] = domain;
@@ -1821,6 +1868,11 @@ IOReturn IOAccelPhxNativeClient::doBoFree(IOExternalMethodArguments *a) {
 }
 
 void IOAccelPhxNativeClient::boRelease(Bo &b) {
+    if (statSlot >= 0) {
+        OSDecrementAtomic(&gClientStat[statSlot].handles);
+        OSAddAtomic64(-(SInt64)b.size, &gClientStat[statSlot].bytes);
+        OSAddAtomic64(1, &gClientStat[statSlot].frees);
+    }
     if (b.host) {
         b.md->complete();
         hostBytes(-(SInt64)b.size);
@@ -1882,7 +1934,7 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
     hostUsed += size;
     hostBytes((SInt64)size);
     bos[h] = Bo{md, size, 2, 0, nullptr, true, readOnly};
-    handleTaken();
+    handleTaken(size);
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
     a->scalarOutput[2] = 0;

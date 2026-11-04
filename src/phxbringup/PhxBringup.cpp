@@ -25,7 +25,7 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 42u
+#define PHX_KEXT_BUILD 43u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system

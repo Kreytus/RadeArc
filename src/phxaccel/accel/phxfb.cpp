@@ -49,8 +49,26 @@ SYSCTL_INT(_debug, OID_AUTO, phxfb_vbl_staged, CTLFLAG_RW | CTLFLAG_LOCKED, &gVb
 SYSCTL_QUAD(_debug, OID_AUTO, phxfb_vbl_n, CTLFLAG_RD | CTLFLAG_LOCKED, &gVblN, "VBL ticks fired");
 SYSCTL_QUAD(_debug, OID_AUTO, phxfb_vbl_late_us_sum, CTLFLAG_RW | CTLFLAG_LOCKED, &gVblLateUsSum, "microseconds the VBL ticks fired past their deadlines, summed");
 SYSCTL_QUAD(_debug, OID_AUTO, phxfb_vbl_late_us_max, CTLFLAG_RW | CTLFLAG_LOCKED, &gVblLateUsMax, "the latest VBL tick, microseconds past its deadline (writable: 0 restarts it)");
+// debug.phxfb_wbench=1: how fast the CPU stores to the scan-out, through each view, and why. Frames are copied in at
+// ~190 MB/s on the 8500G (44 ms for 1920x1080, 2026-11-03), which is uncached speed, and a window drag still lags
+// behind the damage-only copy. The bench reads the frame once through the BAR into a kernel buffer, then stores the
+// same pixels back (movnti, nothing on the panel changes) through the system-RAM view PhxFB uses, through the BAR, and
+// through a fresh write-back mapping of the system-RAM view; and it logs the CPU's memory-type MSRs (PAT, MTRRs,
+// SYSCFG, TOP_MEM/TOM2) with the variable MTRR that covers the scan-out. Thread context (the sysctl), no locks held.
+static SInt64 gWbReadUs, gWbAliasUs, gWbBarUs, gWbWbUs;
+extern int gIopFull;   // nvrm-accel.cpp: the next copied frame rewrites every pixel (the bench raced a frame)
+static int phxfbWbenchSysctl SYSCTL_HANDLER_ARGS;
+SYSCTL_PROC(_debug, OID_AUTO, phxfb_wbench, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_LOCKED, nullptr, 0, phxfbWbenchSysctl, "I",
+            "write 1: time stores to the scan-out through each view and log the memory-type MSRs (phxfb_wbench_*_us)");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_wbench_read_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gWbReadUs, "bench: reading one frame through the BAR, us");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_wbench_alias_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gWbAliasUs, "bench: storing one frame through the system-RAM view (the one frames use), us");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_wbench_bar_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gWbBarUs, "bench: storing one frame through the BAR (write-combined), us");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_wbench_wb_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gWbWbUs, "bench: storing one frame through a write-back mapping of the system-RAM view, us");
 static struct sysctl_oid *const kFbOids[] = { &sysctl__debug_phxfb_alias, &sysctl__debug_phxfb_vbl_staged, &sysctl__debug_phxfb_vbl_n,
-                                              &sysctl__debug_phxfb_vbl_late_us_sum, &sysctl__debug_phxfb_vbl_late_us_max };
+                                              &sysctl__debug_phxfb_vbl_late_us_sum, &sysctl__debug_phxfb_vbl_late_us_max,
+                                              &sysctl__debug_phxfb_wbench, &sysctl__debug_phxfb_wbench_read_us,
+                                              &sysctl__debug_phxfb_wbench_alias_us, &sysctl__debug_phxfb_wbench_bar_us,
+                                              &sysctl__debug_phxfb_wbench_wb_us };
 
 // The class name carries "AMD": CoreDisplay tells the GPU vendor from the framebuffer's class name (Intel, AMD, NVDA,
 // AppleParavirt), and for any other name it turns IOPresentment off, which left the panel on the software compositor
@@ -64,6 +82,7 @@ class PhxAMDFB : public IOFramebuffer {
     // whole desktop lagged, 2026-10-20). This view comes out write-back although it asks for write-combined (frames
     // copied with plain stores stayed in the CPU cache: stripes), so the display pipe writes it with non-temporal stores.
     IOMemoryMap *fAliasMap = nullptr;
+    uint64_t fAliasPhys = 0;   // system-RAM address of the scan-out behind fAliasMap (debug.phxfb_wbench)
     unsigned fAliasTries = 0;
     volatile UInt32 fAliasBusy = 0;
     struct Irq { IOFBInterruptProc proc = nullptr; OSObject *target = nullptr; void *ref = nullptr; };
@@ -461,7 +480,7 @@ public:
                 for (uint64_t w = 0; w < words; w += step, n++) { const uint32_t x = a[w], y = b[w]; same += x == y; nz += y != 0; }
                 PFBLOG("alias: scan-out at BAR offset 0x%llx = system RAM 0x%llx: %u of %u samples match the BAR (%u non-zero)",
                        barOff, phys, same, n, nz);
-                if (same == n && nz) fAliasMap = m; else m->release();
+                if (same == n && nz) { fAliasMap = m; fAliasPhys = phys; } else m->release();
             } else {
                 PFBLOG("alias: carve-out 0x%llx, scan-out BAR offset 0x%llx: no system-RAM view, copying through the BAR", fbPhys, barOff);
             }
@@ -469,6 +488,7 @@ public:
         fAliasBusy = 0;
         return fAliasMap;
     }
+    void writeBench();
     IOReturn callPlatformFunction(const OSSymbol *fn, bool wait, void *p1, void *p2, void *p3, void *p4) override {
         if (fn && fn->isEqualTo(NVRM_VRAM_FN_SCANOUT)) {
             NVRMVramRequest *r = (NVRMVramRequest *)p1;
@@ -490,6 +510,76 @@ public:
 };
 
 OSDefineMetaClassAndStructors(PhxAMDFB, IOFramebuffer)
+
+static PhxAMDFB *gWbFb;   // the started framebuffer, for debug.phxfb_wbench
+
+static inline uint64_t phxRdmsr(uint32_t msr) {
+    uint32_t lo, hi;
+    __asm__ __volatile__("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+    return (uint64_t)hi << 32 | lo;
+}
+
+static uint64_t phxUsSince(uint64_t t0) { uint64_t ns; absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns); return ns / 1000; }
+
+// Store n bytes from src to dst with movnti (8 bytes at a time) and fence: the copy loop's store side.
+static void phxStoreNt(void *dst, const void *src, size_t n) {
+    uint64_t *d = (uint64_t *)dst;
+    const uint64_t *s = (const uint64_t *)src;
+    for (size_t i = 0; i < n / 8; i++) __asm__ __volatile__("movnti %1, %0" : "=m"(d[i]) : "r"(s[i]));
+    __asm__ __volatile__("sfence" ::: "memory");
+}
+
+void PhxAMDFB::writeBench() {
+    // The memory-type MSRs: architectural on AMD64 (APM vol. 2, 7.7 MTRRs and 7.8 PAT; SYSCFG / TOP_MEM / TOM2 in 7.9)
+    const uint64_t pat = phxRdmsr(0x277), cap = phxRdmsr(0xFE), def = phxRdmsr(0x2FF), syscfg = phxRdmsr(0xC0010010);
+    const uint64_t top = phxRdmsr(0xC001001A), tom2 = phxRdmsr(0xC001001D);
+    PFBLOG("wbench: PAT 0x%016llx MTRRcap 0x%llx MTRRdefType 0x%llx SYSCFG 0x%llx TOP_MEM 0x%llx TOM2 0x%llx", pat, cap, def,
+           syscfg, top, tom2);
+    const uint64_t phys = fAliasPhys;
+    const unsigned vcnt = (unsigned)(cap & 0xFF) > 16 ? 16 : (unsigned)(cap & 0xFF);
+    for (unsigned i = 0; i < vcnt; i++) {
+        const uint64_t b = phxRdmsr(0x200 + 2 * i), m = phxRdmsr(0x201 + 2 * i);
+        if (!(m & 0x800)) continue;   // MTRRphysMask valid bit
+        const uint64_t mask = m & 0x000FFFFFFFFFF000ull, base = b & 0x000FFFFFFFFFF000ull;
+        const bool covers = phys && ((phys & mask) == (base & mask));
+        PFBLOG("wbench: MTRR%u base 0x%llx type %llu mask 0x%llx%s", i, base, b & 0xFF, mask, covers ? "  <- covers the scan-out" : "");
+    }
+    const size_t bytes = (size_t)fRowBytes * fHeight & ~(size_t)63;
+    void *buf = bytes ? IOMallocAligned(bytes, 64) : nullptr;
+    if (!buf || !fSurfMap) { PFBLOG("wbench: no %s", buf ? "BAR mapping" : "buffer"); if (buf) IOFreeAligned(buf, bytes); return; }
+    uint64_t t = mach_absolute_time();
+    const volatile uint64_t *bar = (const volatile uint64_t *)fSurfMap->getVirtualAddress();
+    uint64_t *b64 = (uint64_t *)buf;
+    for (size_t i = 0; i < bytes / 8; i++) b64[i] = bar[i];
+    gWbReadUs = (SInt64)phxUsSince(t);
+    IOMemoryMap *alias = fAliasMap;
+    if (alias) { t = mach_absolute_time(); phxStoreNt((void *)alias->getVirtualAddress(), buf, bytes); gWbAliasUs = (SInt64)phxUsSince(t); }
+    t = mach_absolute_time(); phxStoreNt((void *)fSurfMap->getVirtualAddress(), buf, bytes); gWbBarUs = (SInt64)phxUsSince(t);
+    gWbWbUs = -1;
+    if (phys)
+        if (IODeviceMemory *dm = IODeviceMemory::withRange(phys, bytes)) {
+            if (IOMemoryMap *m = dm->map(kIOMapCopybackCache)) {
+                t = mach_absolute_time(); phxStoreNt((void *)m->getVirtualAddress(), buf, bytes); gWbWbUs = (SInt64)phxUsSince(t);
+                m->release();
+            }
+            dm->release();
+        }
+    IOFreeAligned(buf, bytes);
+    gIopFull = 1;   // a frame copied while the bench ran may have been overwritten with the older pixels
+    PFBLOG("wbench: %llu bytes: read via BAR %lld us; store via system-RAM view %lld us, via BAR %lld us, via write-back view %lld us",
+           (unsigned long long)bytes, gWbReadUs, alias ? gWbAliasUs : -1ll, gWbBarUs, gWbWbUs);
+}
+
+static int phxfbWbenchSysctl SYSCTL_HANDLER_ARGS {
+    int v = 0;
+    const int err = sysctl_handle_int(oidp, &v, 0, req);
+    if (err || !req->newptr) return err;
+    if (v != 1) return EINVAL;
+    PhxAMDFB *fb = gWbFb;
+    if (!fb) return ENXIO;
+    fb->writeBench();
+    return 0;
+}
 
 // One boot per arming: `nvram phxfb-boot=1` lets the next start take the panel, and start removes the variable and
 // commits NVRAM at once, so a boot that panics after this point comes back on the firmware framebuffer without hands.
@@ -603,6 +693,7 @@ bool PhxAMDFB::start(IOService *provider)
     phxHoldInit(this, kBootHoldSec);
     phxAgdcInstall();
     if (!gAliasSysctl) { for (auto *o : kFbOids) sysctl_register_oid(o); gAliasSysctl = true; }
+    gWbFb = this;
     PFBLOG("panel published: %ux%u row %u at 0x%llx (vbl timer %s)", fWidth, fHeight, fRowBytes,
            (unsigned long long)fBase, fVblTimer ? "running" : "MISSING");
     return true;
@@ -614,6 +705,7 @@ void PhxAMDFB::stop(IOService *provider)
     phxAgdcRemove();
     if (fVblTimer) { thread_call_cancel(fVblTimer); while (!thread_call_free(fVblTimer)) { thread_call_cancel(fVblTimer); IOSleep(5); } fVblTimer = nullptr; }
     if (gAliasSysctl) { for (auto *o : kFbOids) sysctl_unregister_oid(o); gAliasSysctl = false; }
+    gWbFb = nullptr;
     gPhxFrameAbs = 0;
     OSSafeReleaseNULL(fAliasMap);
     OSSafeReleaseNULL(fSurfMap);

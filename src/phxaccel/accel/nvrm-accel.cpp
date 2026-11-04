@@ -1109,7 +1109,8 @@ bool NVDisplayPipe::isTransactionComplete(IOAccelDisplayPipeTransaction2 *)
 // shadow is dropped (the next frame writes every pixel) when the scan-out, its geometry or format changes, after a
 // flip, when another copy holds it, and on debug.nvaccel_iop_full=1. Plain loads and 8/4-byte movnti only: no SSE, so
 // no XMM state to save. Setting debug.nvaccel_iop_damage=0 goes back to the full copy below.
-static int gIopDamage = 1, gIopFull;
+static int gIopDamage = 1;
+int gIopFull;   // also set by phxfb.cpp's write bench
 static SInt64 gIopDamageBytes, gIopDamageBytesSum, gCntIopDamageFull, gCntIopDamageBusy;
 struct NVIopShadow { uint32_t *buf; size_t bytes; const void *dst; unsigned words, h, dpr; bool l10r; volatile bool valid; volatile UInt32 busy; };
 static NVIopShadow gIopShadow[kNvMaxFB];

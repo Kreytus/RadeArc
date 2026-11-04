@@ -26,13 +26,20 @@
 #include "rdna3_chip_profile.h"
 #include "phx_dcn_i2c.h"
 
-#define PHX_KEXT_BUILD 45u
+#define PHX_KEXT_BUILD 46u
 
 // debug.phxbos_flush: how a client's BOs are made coherent around each submission and each completed wait.
 // 2 = clflush every line (the bring-up way), 1 = clflushopt (the same lines, pipelined), 0 = none (the GPU maps system
 // memory snooped, kPteSysFlags). With clflush, WindowServer spent ~73% of its CPU here and composited ~13 fps; with
 // none, 41 fps and no artifacts (2026-10-20), hence the default.
 static int gBosFlush = 0;
+// debug.phxbo_task_alloc (default 1): a BO's pages are allocated in the client's own address space and wired, as host
+// imports are, instead of in the kernel's. WindowServer aborted after ~30 minutes with a kernel allocation refused for
+// lack of space (KERN_NO_SPACE in vm_map_enter, 2026-11-04) while about 1 GiB of BOs (WindowServer, browser and
+// Electron GPU processes, debug.phxbo_clients) each held a kernel mapping. The kernel reads none of a BO but a fence it
+// writes, which gets a kernel mapping on first use (kernelView). 0 = the earlier kernel allocation, for new BOs.
+static int gBoTaskAlloc = 1;
+static volatile UInt32 gBoTaskAllocFail;
 static volatile SInt64 gBosFlushBytes;
 SYSCTL_INT(_debug, OID_AUTO, phxbos_flush, CTLFLAG_RW | CTLFLAG_LOCKED, &gBosFlush, 0,
            "BO cache maintenance per submit/wait: 0 none, 1 clflushopt, 2 clflush");
@@ -47,6 +54,10 @@ SYSCTL_UINT(_debug, OID_AUTO, phxbo_maps_full, CTLFLAG_RD | CTLFLAG_LOCKED, (uns
             "GPU VA mappings refused: mapping table full");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_nomem, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoNoMem, 0,
             "BO creations refused: pool budget or memory");
+SYSCTL_INT(_debug, OID_AUTO, phxbo_task_alloc, CTLFLAG_RW | CTLFLAG_LOCKED, &gBoTaskAlloc, 0,
+           "1 = BO pages in the client's address space, wired (no kernel mapping); 0 = in the kernel's");
+SYSCTL_UINT(_debug, OID_AUTO, phxbo_task_alloc_fail, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoTaskAllocFail, 0,
+            "BOs that fell back to the kernel allocation (client-space allocation or wiring failed)");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_handles, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoPeakHandles, 0,
             "most BO handles one client has held");
 SYSCTL_UINT(_debug, OID_AUTO, phxbo_peak_maps, CTLFLAG_RD | CTLFLAG_LOCKED, (unsigned int *)&gBoPeakMaps, 0,
@@ -323,6 +334,8 @@ private:
         uint8_t *kva;             // the kernel's view of the BO; NULL for host imports, which the kernel never reads
         bool host;
         bool readOnly;            // a host import wired for device reads only (the caller maps those pages read-only)
+        bool taskAlloc;           // pages in the client's own address space, wired (prepare) while the BO lives
+        IOMemoryMap *kmap;        // taskAlloc: the kernel's view, made only when the kernel writes the BO (a fence)
     };
     struct Map {
         bool used;
@@ -338,6 +351,7 @@ private:
     IOReturn doBoFree(IOExternalMethodArguments *a);
     IOReturn doBoImportHost(IOExternalMethodArguments *a);
     void boRelease(Bo &b);
+    uint8_t *kernelView(Bo &b);
     IOReturn doGemVa(IOExternalMethodArguments *a);
     IOReturn doCtx(IOExternalMethodArguments *a);
     IOReturn doSubmit(IOExternalMethodArguments *a);
@@ -490,6 +504,8 @@ void PhxBringup::stop(IOService *provider) {
         sysctl_unregister_oid(&sysctl__debug_phxbo_nomem);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_handles);
         sysctl_unregister_oid(&sysctl__debug_phxbo_clients);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_task_alloc);
+        sysctl_unregister_oid(&sysctl__debug_phxbo_task_alloc_fail);
         sysctl_unregister_oid(&sysctl__debug_phxbo_peak_maps);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_cap_mb);
         sysctl_unregister_oid(&sysctl__debug_phxbo_host_nomem);
@@ -1524,6 +1540,8 @@ IOReturn PhxBringup::newUserClient(task_t owningTask, void *securityID, UInt32 t
         sysctl_register_oid(&sysctl__debug_phxbo_nomem);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_handles);
         sysctl_register_oid(&sysctl__debug_phxbo_clients);
+        sysctl_register_oid(&sysctl__debug_phxbo_task_alloc);
+        sysctl_register_oid(&sysctl__debug_phxbo_task_alloc_fail);
         sysctl_register_oid(&sysctl__debug_phxbo_peak_maps);
         sysctl_register_oid(&sysctl__debug_phxbo_host_cap_mb);
         sysctl_register_oid(&sysctl__debug_phxbo_host_nomem);
@@ -1828,13 +1846,32 @@ IOReturn IOAccelPhxNativeClient::doBoCreate(IOExternalMethodArguments *a) {
     // (XNU allocates an alignment above the page size with kmem_alloc_contig): once memory was fragmented, every
     // buffer of 8 MiB or more failed after a 400 ms search, and each Metal app spent ~0.8 s at launch (2026-10-21).
     (void)align;
+    if (gBoTaskAlloc && task) {
+        // Pageable memory in the client's map (fresh anonymous pages read as zero), wired for the GPU here; freed with
+        // the BO or when the client goes away (freeAll). See gBoTaskAlloc.
+        IOBufferMemoryDescriptor *tm = IOBufferMemoryDescriptor::inTaskWithOptions(
+            task, kIODirectionInOut | kIOMemoryPageable, size, PAGE_SIZE);
+        if (tm && tm->prepare() == kIOReturnSuccess) {
+            *pool += size;
+            bos[h] = Bo{tm, size, domain, bits, nullptr, false, false, true, nullptr};
+            handleTaken(size);
+            a->scalarOutput[0] = h;
+            a->scalarOutput[1] = size;
+            a->scalarOutput[2] = domain;
+            a->scalarOutput[3] = bits;
+            return kIOReturnSuccess;
+        }
+        if (tm)
+            tm->release();
+        OSIncrementAtomic(&gBoTaskAllocFail);
+    }
     IOBufferMemoryDescriptor *md = IOBufferMemoryDescriptor::inTaskWithOptions(
         kernel_task, kIODirectionInOut | kIOMemoryKernelUserShared, size, PAGE_SIZE);
     if (!md)
         return kIOReturnNoMemory;
     bzero(md->getBytesNoCopy(), size);
     *pool += size;
-    bos[h] = Bo{md, size, domain, bits, static_cast<uint8_t *>(md->getBytesNoCopy()), false};
+    bos[h] = Bo{md, size, domain, bits, static_cast<uint8_t *>(md->getBytesNoCopy()), false, false, false, nullptr};
     handleTaken(size);
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
@@ -1867,15 +1904,30 @@ IOReturn IOAccelPhxNativeClient::doBoFree(IOExternalMethodArguments *a) {
     return kIOReturnSuccess;
 }
 
+// The kernel's view of a BO, for the fence it writes: a client-space BO gets a kernel mapping on first use, kept until
+// the BO is freed (a fence BO is small and reused). Host imports: none, the kernel never writes into those.
+uint8_t *IOAccelPhxNativeClient::kernelView(Bo &b) {
+    if (b.kva || b.host || !b.taskAlloc)
+        return b.kva;
+    b.kmap = b.md->map();
+    if (b.kmap)
+        b.kva = reinterpret_cast<uint8_t *>(b.kmap->getVirtualAddress());
+    return b.kva;
+}
+
 void IOAccelPhxNativeClient::boRelease(Bo &b) {
     if (statSlot >= 0) {
         OSDecrementAtomic(&gClientStat[statSlot].handles);
         OSAddAtomic64(-(SInt64)b.size, &gClientStat[statSlot].bytes);
         OSAddAtomic64(1, &gClientStat[statSlot].frees);
     }
+    if (b.kmap)
+        b.kmap->release();
     if (b.host) {
         b.md->complete();
         hostBytes(-(SInt64)b.size);
+    } else if (b.taskAlloc) {
+        b.md->complete();
     }
     b.md->release();
     b = Bo{};
@@ -1933,7 +1985,7 @@ IOReturn IOAccelPhxNativeClient::doBoImportHost(IOExternalMethodArguments *a) {
     }
     hostUsed += size;
     hostBytes((SInt64)size);
-    bos[h] = Bo{md, size, 2, 0, nullptr, true, readOnly};
+    bos[h] = Bo{md, size, 2, 0, nullptr, true, readOnly, false, nullptr};
     handleTaken(size);
     a->scalarOutput[0] = h;
     a->scalarOutput[1] = size;
@@ -2091,7 +2143,7 @@ IOReturn IOAccelPhxNativeClient::doSubmit(IOExternalMethodArguments *a) {
         fb = findBo(h.fence_handle);
         if (!fb)
             return kIOReturnNotFound;
-        if (!fb->kva || (h.fence_offset & 7) || static_cast<uint64_t>(h.fence_offset) + 8 > fb->size)
+        if (!kernelView(*fb) || (h.fence_offset & 7) || static_cast<uint64_t>(h.fence_offset) + 8 > fb->size)
             return kIOReturnBadArgument;   // the kernel writes the fence: not into a host import
     } else if (h.fence_handle || h.fence_offset) {
         return kIOReturnBadArgument;

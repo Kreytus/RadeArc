@@ -32,7 +32,19 @@ void phxHoldInit(IOService *fb, unsigned bootHoldSec);   // phxagdc.cpp: debug.p
 static int gAlias = 1;
 static bool gAliasSysctl;
 SYSCTL_INT(_debug, OID_AUTO, phxfb_alias, CTLFLAG_RW | CTLFLAG_LOCKED, &gAlias, 0,
-           "1 = frames are copied into the scan-out through its system-RAM address (the carve-out), 0 = through the GPU's BAR");
+           "1 = frames go through whichever view of the scan-out stored faster when it was first mapped (phxfb_alias_faster), "
+           "2 = always through its system-RAM address (the carve-out), 0 = always through the GPU's BAR");
+// Which view took stores faster, measured once when the system-RAM view is first mapped: 1 = the system-RAM view,
+// 0 = the BAR, -1 = not measured. The 780M stored through the carve-out much faster than through the BAR (2560x1600:
+// ~110 ms through the BAR, 2026-10-20); the 8500G the other way round (1920x1080: 23 ms through the BAR, 126 ms through
+// the carve-out, write-back or write-combined alike, debug.phxfb_wbench 2026-11-04). So it is measured, not assumed.
+static int gAliasFaster = -1;
+static SInt64 gAliasStoreUs[2];   // [0] BAR, [1] system-RAM view: microseconds for the measured block
+SYSCTL_INT(_debug, OID_AUTO, phxfb_alias_faster, CTLFLAG_RD | CTLFLAG_LOCKED, &gAliasFaster, 0,
+           "1 = the system-RAM view stored faster, 0 = the BAR did, -1 = not measured yet");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_alias_bar_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gAliasStoreUs[0], "startup measure: storing the block through the BAR, us");
+SYSCTL_QUAD(_debug, OID_AUTO, phxfb_alias_ram_us, CTLFLAG_RD | CTLFLAG_LOCKED, &gAliasStoreUs[1], "startup measure: storing the block through the system-RAM view, us");
+static void phxStoreNt(void *dst, const void *src, size_t n);
 
 // The VBL tick. XNU's timer coalescing moves a kernel deadline by up to an eighth of its delay, at most 1 ms, so a
 // 120 Hz tick could land anywhere in the first millisecond after the vblank it stands for. The system-critical urgency
@@ -68,7 +80,8 @@ static struct sysctl_oid *const kFbOids[] = { &sysctl__debug_phxfb_alias, &sysct
                                               &sysctl__debug_phxfb_vbl_late_us_sum, &sysctl__debug_phxfb_vbl_late_us_max,
                                               &sysctl__debug_phxfb_wbench, &sysctl__debug_phxfb_wbench_read_us,
                                               &sysctl__debug_phxfb_wbench_alias_us, &sysctl__debug_phxfb_wbench_bar_us,
-                                              &sysctl__debug_phxfb_wbench_wb_us };
+                                              &sysctl__debug_phxfb_wbench_wb_us, &sysctl__debug_phxfb_alias_faster,
+                                              &sysctl__debug_phxfb_alias_bar_us, &sysctl__debug_phxfb_alias_ram_us };
 
 // The class name carries "AMD": CoreDisplay tells the GPU vendor from the framebuffer's class name (Intel, AMD, NVDA,
 // AppleParavirt), and for any other name it turns IOPresentment off, which left the panel on the software compositor
@@ -480,7 +493,7 @@ public:
                 for (uint64_t w = 0; w < words; w += step, n++) { const uint32_t x = a[w], y = b[w]; same += x == y; nz += y != 0; }
                 PFBLOG("alias: scan-out at BAR offset 0x%llx = system RAM 0x%llx: %u of %u samples match the BAR (%u non-zero)",
                        barOff, phys, same, n, nz);
-                if (same == n && nz) { fAliasMap = m; fAliasPhys = phys; } else m->release();
+                if (same == n && nz) { fAliasMap = m; fAliasPhys = phys; measureViews(); } else m->release();
             } else {
                 PFBLOG("alias: carve-out 0x%llx, scan-out BAR offset 0x%llx: no system-RAM view, copying through the BAR", fbPhys, barOff);
             }
@@ -489,12 +502,37 @@ public:
         return fAliasMap;
     }
     void writeBench();
+    // Once, right after the system-RAM view matched the BAR: time storing the same 1 MB (the top of the frame, read
+    // through the system-RAM view, so the panel does not change) through each view, a few rounds each, best of each.
+    // Thread context (the scan-out request), ~10-100 ms once. The result picks the view for debug.phxfb_alias=1.
+    void measureViews() {
+        const size_t bytes = 1u << 20;
+        if (!fAliasMap || !fSurfMap || (uint64_t)fRowBytes * fHeight < bytes) return;
+        void *buf = IOMallocAligned(bytes, 64);
+        if (!buf) return;
+        memcpy(buf, (const void *)fAliasMap->getVirtualAddress(), bytes);
+        void *dst[2] = {(void *)fSurfMap->getVirtualAddress(), (void *)fAliasMap->getVirtualAddress()};
+        uint64_t best[2] = {~0ull, ~0ull};
+        for (unsigned round = 0; round < 3; round++)
+            for (unsigned v = 0; v < 2; v++) {
+                const uint64_t t = mach_absolute_time();
+                phxStoreNt(dst[v], buf, bytes);
+                uint64_t ns; absolutetime_to_nanoseconds(mach_absolute_time() - t, &ns);
+                if (ns < best[v]) best[v] = ns;
+            }
+        IOFreeAligned(buf, bytes);
+        gAliasStoreUs[0] = (SInt64)(best[0] / 1000); gAliasStoreUs[1] = (SInt64)(best[1] / 1000);
+        gAliasFaster = best[1] <= best[0] ? 1 : 0;
+        PFBLOG("alias: storing 1 MB took %lld us through the BAR, %lld us through system RAM: frames go through %s",
+               gAliasStoreUs[0], gAliasStoreUs[1], gAliasFaster ? "system RAM" : "the BAR");
+    }
     IOReturn callPlatformFunction(const OSSymbol *fn, bool wait, void *p1, void *p2, void *p3, void *p4) override {
         if (fn && fn->isEqualTo(NVRM_VRAM_FN_SCANOUT)) {
             NVRMVramRequest *r = (NVRMVramRequest *)p1;
             if (!r || r->version != NVRM_VRAM_ABI_VERSION) return kIOReturnBadArgument;
             if (!fSurfMap) return kIOReturnNotReady;
             IOMemoryMap *alias = gAlias ? aliasMap() : nullptr;
+            if (alias && gAlias == 1 && gAliasFaster == 0) alias = nullptr;   // measured: the BAR stores faster
             r->kva = (void *)(alias ? alias : fSurfMap)->getVirtualAddress();
             r->phys = fBase; r->actualSize = round_page_64((uint64_t)fRowBytes * fHeight);
             r->width = fWidth; r->height = fHeight; r->pitch = fRowBytes;

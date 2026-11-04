@@ -396,3 +396,15 @@ Expected in `~/Desktop/testl2.txt`:
 
 The picture should look the same throughout. If the screen breaks up or goes black, wait: it restores after 15 s.
 If it doesn't come back, restart; GOP sets the pipe up again at boot.
+
+**Test L step 2, passed** (package 08cb06b, build 46, `hardware/dumps/b650m_8500g/testl2.txt`; the GPU desktop was
+off through the kill switch, so the panel showed GOP's framebuffer):
+- Preconditions held: DLG refclk 24 MHz, HUBP0 live, `VTG0_VCOUNT_INIT` 1121, frames moving.
+- `optc3_lock` reported at once, so all 46 writes went in under the lock.
+- For 15 s with Linux's 60 Hz values (VSTARTUP 44, `VTG0_FP2` 2, the full DLG/TTU/RQ set from DML):
+  - 907 frames (60.5 Hz)
+  - `HUBP_UNDERFLOW_STATUS` 0 throughout
+  - no visible change
+- The restore put all 45 registers back exactly (0 differ).
+- So the write path, Linux's lock / global-sync / VTG / HUBP order and DML's per-mode values all work on the 8500G.
+  The 144 Hz switch writes the same registers with the 144 Hz plan, plus the clocks, the PLL, the PHY and the timing.

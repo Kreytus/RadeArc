@@ -1,0 +1,65 @@
+== 2026-11-04 20:00:48 testl2 --apply (RadeArc package 08cb06b1982d1ea3119f25479e81742e4637b7ef)
+      "phx-chip" = "Phoenix 2"
+      "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== preconditions: DLG refclk 24000 kHz, HUBP0 blank 0, VTG0_VCOUNT_INIT 1121, OTG0 frames +6 in 100 ms
+== plan: 46 writes (Linux DML, 60 Hz), 45 registers saved
+   0 [0x05046] 0x0000000d -> 0x0000002c
+   1 [0x05047] 0x01400226 -> 0x00f70226
+   2 [0x05048] 0x0000012c -> 0x00000148   (then wait for VACTIVE)
+   3 [0x039ed] 0x84610000 -> 0x84610002
+   4 [0x03ab3] 0x000f1002 -> 0x000f1002
+   5 [0x03ab6] 0x00000100 -> 0x00000100
+   6 [0x03ab3] 0x000f1002 -> 0x000f1002
+   7 [0x03b2c] 0x00e40000 -> 0x00e40000
+   8 [0x03ae9] 0x00000055 -> 0x00000056
+   9 [0x03ab1] 0x00000300 -> 0x033d1b40
+  10 [0x03ab2] 0x00000000 -> 0x00000000
+  11 [0x03b04] 0x00290040 -> 0x0029001f
+  12 [0x03b05] 0x00000000 -> 0x00001188
+  13 [0x03b06] 0x00000000 -> 0x0001638e
+  14 [0x03b07] 0x00000000 -> 0x00000021
+  15 [0x03b1d] 0x00000000 -> 0x00014afd
+  16 [0x03b0b] 0x00000000 -> 0x00000085
+  17 [0x03b12] 0x00000000 -> 0x00000200
+  18 [0x03b13] 0x00000000 -> 0x00002c71
+  19 [0x03b16] 0x00000000 -> 0x00000020
+  20 [0x03b17] 0x00000000 -> 0x00000b1c
+  21 [0x03b1b] 0x00000000 -> 0x00000136
+  22 [0x03b0c] 0x00000000 -> 0x00000000
+  23 [0x03b14] 0x00000000 -> 0x00000000
+  24 [0x03b15] 0x00000000 -> 0x00000000
+  25 [0x03b18] 0x00000000 -> 0x00000000
+  26 [0x03b19] 0x00000000 -> 0x00000000
+  27 [0x03aea] 0x00000000 -> 0x058e0000
+  28 [0x03aec] 0x08000000 -> 0x0800295f
+  29 [0x03aee] 0x00000000 -> 0x08000000
+  30 [0x03af0] 0x00000000 -> 0x08000000
+  31 [0x03b10] 0x00000000 -> 0x00000058
+  32 [0x03af4] 0x80000000 -> 0x80000000
+  33 [0x03b08] 0x28080000 -> 0x1c080000
+  34 [0x03b09] 0x00080000 -> 0x00080000
+  35 [0x03b0a] 0x00000301 -> 0x00000604
+  36 [0x03b0f] 0x00000000 -> 0x00000404
+  37 [0x03b0d] 0x00000000 -> 0x00000215
+  38 [0x03b0e] 0x00000000 -> 0x00000215
+  39 [0x03b11] 0x00000000 -> 0x00000163
+  40 [0x03b1a] 0x00000000 -> 0x00000136
+  41 [0x03aed] 0x00000000 -> 0x0000295f
+  42 [0x03aef] 0x00000000 -> 0x00000000
+  43 [0x03af1] 0x00000000 -> 0x00000000
+  44 [0x03af3] 0x00000000 -> 0x00000000
+  45 [0x03aeb] 0xe3000a64 -> 0xe00032b2
+== apply (underflow status before: 0)
+  apply: ok
+   2.0 s: frames +121, underflow status 0
+   4.0 s: frames +242, underflow status 0
+   6.0 s: frames +363, underflow status 0
+   8.0 s: frames +484, underflow status 0
+  10.0 s: frames +605, underflow status 0
+  12.0 s: frames +726, underflow status 0
+  14.0 s: frames +847, underflow status 0
+  watched: 907 frames, underflow status max 0
+== restore: ok, 0 of 45 registers differ
+RESULT: PASS (Linux's 60 Hz values ran 15 s without underflow)
+testl2 exit 0

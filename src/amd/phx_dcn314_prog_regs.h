@@ -182,6 +182,10 @@ static constexpr Fld kVtgFp2 = {0x039ed, 0, 0x00007fff};  // regVTG0_CONTROL.VTG
 static constexpr Fld kVtgVcountInit = {0x039ed, 16, 0x7fff0000};  // regVTG0_CONTROL.VTG0_VCOUNT_INIT, optc1_set_vtg_params
 static constexpr Fld kHubpVtgSel = {0x03ab3, 4, 0x000000f0};  // regHUBP0_DCHUBP_CNTL.HUBP_VTG_SEL, hubp2_vtg_sel (dcn20_update_dchubp_dpp)
 static constexpr Fld kHubpUnderflow = {0x03ab3, 28, 0x70000000};  // regHUBP0_DCHUBP_CNTL.HUBP_UNDERFLOW_STATUS, hubp2_read_state_common
+static constexpr Fld kDppDtoEnable0 = {0x00176, 0, 0x00000001};  // regDPPCLK_DTO_CTRL.DPPCLK0_DTO_ENABLE, dccg31_update_dpp_dto
+static constexpr Fld kDppDtoPhase0 = {0x00159, 0, 0x000000ff};  // regDPPCLK0_DTO_PARAM.DPPCLK0_DTO_PHASE, dccg31_update_dpp_dto
+static constexpr Fld kDppDtoModulo0 = {0x00159, 16, 0x00ff0000};  // regDPPCLK0_DTO_PARAM.DPPCLK0_DTO_MODULO, dccg31_update_dpp_dto
+static constexpr Fld kDentistDispRdiv = {0x00124, 8, 0x00007f00};  // regDENTIST_DISPCLK_CNTL.DENTIST_DISPCLK_RDIVIDER, the running DISPCLK divider
 static constexpr unsigned kNumProgRegs = sizeof(kProgRegs) / sizeof(kProgRegs[0]);
 static constexpr unsigned kNumProgFields = sizeof(kProgFields) / sizeof(kProgFields[0]);
 

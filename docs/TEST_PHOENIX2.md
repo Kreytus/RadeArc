@@ -360,3 +360,39 @@ which writes.
 
 This proves the write path and Linux's HUBP values on a mode that already works. The clock and timing change for
 144 Hz comes after.
+
+## Test L, step 2: Linux's values on the running 60 Hz pipe (writes, restores itself)
+
+From the newest install package. Needs the boot-args `-phxp2 phxdebug=1`, as Test clk did.
+
+Dry run first. Nothing is written; it lists the 46 planned writes next to the live values:
+```bash
+cd ~/Desktop/radearc-package && bash testl2.sh
+```
+Then the real run. It writes, watches for 15 s, and puts every saved register back:
+```bash
+cd ~/Desktop/radearc-package && bash testl2.sh --apply
+```
+
+What it does (`src/amd/phx_dcn314_step2.h`), in the order of Linux v6.17's `dcn20_program_front_end_for_ctx` /
+`dcn20_program_pipe` for DCN 3.1.4:
+1. `optc3_lock`: `OTG_MASTER_UPDATE_LOCK_SEL` 0, `OTG_MASTER_UPDATE_LOCK` 1, then wait for `UPDATE_LOCK_STATUS`
+   (10 × 1 µs). If the lock never reports, nothing else is written.
+2. `optc1_program_global_sync` (VSTARTUP 44, VUPDATE 550/247, VREADY 328), then wait for VACTIVE.
+3. `optc1_set_vtg_params`: `VTG0_FP2` 2, `VTG0_VCOUNT_INIT` 1121.
+4. `hubp2_vtg_sel`, `hubp3_setup`, `hubp2_setup_interdependent`: Linux's DML values for 60 Hz.
+5. `optc1_unlock`.
+
+It refuses to run unless the DLG refclk is 24 MHz, HUBP0 is live, `VTG0_VCOUNT_INIT` is 1121 and OTG0's frame
+counter moves. Ctrl-C restores at once. It doesn't change the clocks, PLL, PHY or timing, the DET / compressed-buffer
+split, unbounded requesting, the watermarks or `HUBP_TTU_DISABLE`; those are later steps.
+
+Expected in `~/Desktop/testl2.txt`:
+- `apply: ok`
+- every 2 s: `frames +N` (about 120 per 2 s) and `underflow status 0`
+- `watched: ~900 frames, underflow status max 0`
+- `restore: ok, 0 of 45 registers differ`
+- `RESULT: PASS`
+
+The picture should look the same throughout. If the screen breaks up or goes black, wait: it restores after 15 s.
+If it doesn't come back, restart; GOP sets the pipe up again at boot.

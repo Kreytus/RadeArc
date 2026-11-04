@@ -171,6 +171,17 @@ static const ExtraField kExtraFields[] = {
     {"HUBP3_DCHUBP_CNTL", "HUBP_TTU_DISABLE", 0x03d47, 12, 0x00001000},  // regHUBP3_DCHUBP_CNTL 0x0887, BASE_IDX 2
 };
 static constexpr unsigned kNumExtraFields = sizeof(kExtraFields) / sizeof(kExtraFields[0]);
+// Single fields the Test L sequence drives (phx_dcn314_step2.h)
+struct Fld { uint32_t addr; uint8_t shift; uint32_t mask; };
+static constexpr Fld kOtgLockSel = {0x05051, 25, 0x0e000000};  // regOTG0_OTG_GLOBAL_CONTROL2.OTG_MASTER_UPDATE_LOCK_SEL, optc3_lock (dcn30_optc.c)
+static constexpr Fld kOtgLock = {0x0504a, 0, 0x00000001};  // regOTG0_OTG_MASTER_UPDATE_LOCK.OTG_MASTER_UPDATE_LOCK, optc3_lock / optc1_unlock
+static constexpr Fld kOtgLockStatus = {0x0504a, 8, 0x00000100};  // regOTG0_OTG_MASTER_UPDATE_LOCK.UPDATE_LOCK_STATUS, optc3_lock REG_WAIT
+static constexpr Fld kOtgVActiveDisp = {0x05009, 1, 0x00000002};  // regOTG0_OTG_STATUS.OTG_V_ACTIVE_DISP, optc1_wait_for_state(CRTC_STATE_VACTIVE)
+static constexpr Fld kOtgFrameCount = {0x0500c, 0, 0x00ffffff};  // regOTG0_OTG_STATUS_FRAME_COUNT.OTG_FRAME_COUNT, optc1_get_vblank_counter
+static constexpr Fld kVtgFp2 = {0x039ed, 0, 0x00007fff};  // regVTG0_CONTROL.VTG0_FP2, optc1_set_vtg_params
+static constexpr Fld kVtgVcountInit = {0x039ed, 16, 0x7fff0000};  // regVTG0_CONTROL.VTG0_VCOUNT_INIT, optc1_set_vtg_params
+static constexpr Fld kHubpVtgSel = {0x03ab3, 4, 0x000000f0};  // regHUBP0_DCHUBP_CNTL.HUBP_VTG_SEL, hubp2_vtg_sel (dcn20_update_dchubp_dpp)
+static constexpr Fld kHubpUnderflow = {0x03ab3, 28, 0x70000000};  // regHUBP0_DCHUBP_CNTL.HUBP_UNDERFLOW_STATUS, hubp2_read_state_common
 static constexpr unsigned kNumProgRegs = sizeof(kProgRegs) / sizeof(kProgRegs[0]);
 static constexpr unsigned kNumProgFields = sizeof(kProgFields) / sizeof(kProgFields[0]);
 

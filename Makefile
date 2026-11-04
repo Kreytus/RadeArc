@@ -16,6 +16,7 @@ TESTS = $(TEST_BIN_DIR)/test_rdna3_discovery_uma \
         $(TEST_BIN_DIR)/test_phx_dmub_layout \
         $(TEST_BIN_DIR)/test_phx_dmub_vbios_cmd \
         $(TEST_BIN_DIR)/test_phx_dcn314_plan \
+        $(TEST_BIN_DIR)/test_phx_dcn314_step2 \
         $(TEST_BIN_DIR)/test_r3n_abi
 
 .PHONY: all test clean kext fixtures
@@ -57,6 +58,9 @@ $(TEST_BIN_DIR)/test_phx_dmub_vbios_cmd: tests/test_phx_dmub_vbios_cmd.cpp src/a
 
 $(TEST_BIN_DIR)/test_phx_dcn314_plan: tests/test_phx_dcn314_plan.cpp src/amd/phx_dcn314_plan.h src/amd/phx_dcn314_prog_regs.h src/amd/phx_dml314_plans.h | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_dcn314_plan.cpp -o $@
+
+$(TEST_BIN_DIR)/test_phx_dcn314_step2: tests/test_phx_dcn314_step2.cpp src/amd/phx_dcn314_step2.h src/amd/phx_dcn314_plan.h src/amd/phx_dcn314_prog_regs.h src/amd/phx_dml314_plans.h | $(TEST_BIN_DIR)
+	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_dcn314_step2.cpp -o $@
 
 $(TEST_BIN_DIR)/test_r3n_abi: src/uapi/r3n_user_client.cpp src/winsys/radv_r3n_winsys.cpp tests/test_r3n_abi.cpp | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@

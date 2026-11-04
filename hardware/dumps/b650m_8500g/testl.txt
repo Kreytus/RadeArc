@@ -1,6 +1,6 @@
-== 2026-11-03 17:27:20 testl (RadeArc package bb5dccd3007535e46cfdeef722325c898a79b623)
+== 2026-11-04 16:50:00 testl (RadeArc package 8d303c2c0c37a32018485b979a3a5531db916330)
   |   "phx-chip" = "Phoenix 2"
-  |   "phx-build" = 42
+  |   "phx-build" = 43
 == context (read-only)
   DCHUBBUB_GLOBAL_TIMER_CNTL   [0x039e4] = 0x00001001
       DCHUBBUB_GLOBAL_TIMER_REFDIV           1
@@ -10,6 +10,27 @@
       PHYPLLA_DEEP_COLOR_DTO_ENABLE_STATUS   1
       PHYPLLA_DCCG_DEEP_COLOR_CNTL           0
       PHYPLLA_PIXCLK_ENABLE                  1
+  DCHUBBUB_DET0_CTRL           [0x0397b] = 0x00000303
+      DET0_SIZE                              3
+      DET0_SIZE_CURRENT                      3
+  DCHUBBUB_DET1_CTRL           [0x0397c] = 0x00000000
+      DET1_SIZE                              0
+      DET1_SIZE_CURRENT                      0
+  DCHUBBUB_DET2_CTRL           [0x0397d] = 0x00000000
+      DET2_SIZE                              0
+      DET2_SIZE_CURRENT                      0
+  DCHUBBUB_DET3_CTRL           [0x0397e] = 0x00000000
+      DET3_SIZE                              0
+      DET3_SIZE_CURRENT                      0
+  DCHUBBUB_COMPBUF_CTRL        [0x0397a] = 0x00040202
+      COMPBUF_SIZE                           2
+      COMPBUF_SIZE_CURRENT                   2
+      CONFIG_ERROR                           0
+  HUBP0_DCHUBP_CNTL            [0x03ab3] = 0x000e1000
+      HUBP_UNBOUNDED_REQ_MODE                0
+      HUBP_UNDERFLOW_STATUS                  0
+  CURSOR0_0_CURSOR_CONTROL     [0x03b38] = 0x01000000
+      CURSOR_REQ_MODE                        0
   HUBP0_DCHUBP_CNTL            [0x03ab3] = 0x000f1002
       HUBP_BLANK_EN                          0
       HUBP_TTU_DISABLE                       1
@@ -23,11 +44,12 @@
       HUBP_BLANK_EN                          1
       HUBP_TTU_DISABLE                       1
   DLG refclk (hubbub31_get_dchub_ref_freq): 24000 kHz -> DML plans for 24 MHz
+  Linux plan (60 and 144 Hz alike): DET0 192 KB = 3 segments, COMPBUF 1600 KB = 25 segments, unbounded_req 1
   144 Hz needs DISPCLK >= 342857 kHz, DPPCLK >= 337478 kHz (SMU SetDispclkFreq / SetDppclkFreq)
 == HUBP0 / OTG0: live (GOP, 60 Hz) | Linux DML 60 Hz | Linux DML 144 Hz
   HUBPREQ_DEBUG_DB           [0x03ab6] live 0x00000100 | 60 0x00000100 | 144 0x00000100  WRITE hubp2_vready_at_or_After_vsync
       (whole)                                   256 =        256          256   (const:256)
-  DCHUBP_CNTL                [0x03ab3] live 0x000f1002 | 60 0x000f1002 | 144 0x000f1002  UPDATE hubp2_vready_at_or_After_vsync
+  DCHUBP_CNTL                [0x03ab3] live 0x000e1000 | 60 0x000e1000 | 144 0x000e1000  UPDATE hubp2_vready_at_or_After_vsync
       HUBP_VREADY_AT_OR_AFTER_VSYNC               0 =          0            0   (calc.vready_after_vsync)
   HUBPRET_CONTROL            [0x03b2c] live 0x00e40000 | 60 0x00e40000 | 144 0x00e40000  UPDATE hubp21_program_requestor
       DET_BUF_PLANE1_BASE_ADDRESS                 0 =          0            0   (rq.plane1_base_address)

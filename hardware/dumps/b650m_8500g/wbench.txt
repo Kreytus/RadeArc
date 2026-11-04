@@ -1,0 +1,14 @@
+"phx-build" = 43
+debug.phxfb_wbench: 0
+debug.phxfb_wbench_read_us: 383819
+debug.phxfb_wbench_alias_us: 125598
+debug.phxfb_wbench_bar_us: 22998
+debug.phxfb_wbench_wb_us: 123829
+Timestamp               Ty Process[PID:TID]
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: PAT 0x0007010600070106 MTRRcap 0x508 MTRRdefType 0xc00 SYSCFG 0x740000 TOP_MEM 0xa0000000 TOM2 0x460000000
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: MTRR0 base 0x0 type 6 mask 0xffff80000000
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: MTRR1 base 0x80000000 type 6 mask 0xffffe0000000
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: MTRR2 base 0xfd00000000 type 5 mask 0xfffffc000000
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: MTRR3 base 0xfcf0200000 type 1 mask 0xfffffff00000
+2026-11-04 16:49:13.981 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: MTRR4 base 0xfcf0000000 type 1 mask 0xffffffe00000
+2026-11-04 16:49:14.639 Df kernel[0:26a3] (PhxAccel) PhxFB: wbench: 8294400 bytes: read via BAR 383819 us; store via system-RAM view 125598 us, via BAR 22998 us, via write-back view 123829 us

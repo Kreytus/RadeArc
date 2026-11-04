@@ -19,9 +19,10 @@ on:
 jobs:
   package:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    # Packaging only copies, ad-hoc signs and zips (ditto, codesign, plutil): any Mac will do. The Intel images queued
-    # for 15 minutes and were cancelled (2026-11-04); the kexts still build on macos-15-intel (build-kexts.yml).
-    runs-on: macos-15
+    # Packaging only copies and zips, so it runs on Linux. Both macOS images queued 15 minutes and were cancelled
+    # (2026-11-04, macos-15-intel and macos-15); the kexts still build on macos-15-intel (build-kexts.yml). The ad-hoc
+    # signing WindowServer needs is done on the Mac by install.sh (every nvmtl dylib and the plugin bundle).
+    runs-on: ubuntu-latest
     permissions:
       contents: write   # the rolling "package-latest" release update.sh downloads from
       actions: read
@@ -54,7 +55,7 @@ jobs:
         echo "upstream release $tag"
         gh release download "$tag" --repo luuumi-dev/nullarc --pattern 'nullarc-*.zip'
         ls -la
-        ditto -x -k nullarc-*.zip .
+        unzip -q nullarc-*.zip -x '__MACOSX/*'
         UP=$(ls -d "$RUNNER_TEMP"/up/nullarc-*/ | head -1)
         echo "UP=$UP" >> "$GITHUB_ENV"
         echo "upstream: $(basename "$UP")"
@@ -77,11 +78,11 @@ jobs:
       run: |
         P="$RUNNER_TEMP/out/radearc-package"
         mkdir -p "$(dirname "$P")"
-        ditto "$UP" "$P"
+        cp -a "${UP%/}" "$P"
         K="$RUNNER_TEMP/kexts"; M="$RUNNER_TEMP/mesa-radv"
         rm -rf "$P/EFI/OC/Kexts/PhxBringup.kext" "$P/Library/Extensions/PhxAccel.kext"
-        ditto "$K/PhxBringup.kext" "$P/EFI/OC/Kexts/PhxBringup.kext"
-        ditto "$K/PhxAccel.kext" "$P/Library/Extensions/PhxAccel.kext"
+        cp -a "$K/PhxBringup.kext" "$P/EFI/OC/Kexts/PhxBringup.kext"
+        cp -a "$K/PhxAccel.kext" "$P/Library/Extensions/PhxAccel.kext"
         cp "$K"/phxctl/phxctl "$K"/phxctl/mesboot "$K"/phxctl/phxfw "$P/gpu/phxctl/"
         # Phase 3b Test J: the DMCUB loader, its test script and the 8500G's VBIOS (Phase 0 dump; DMUB window 3)
         cp "$K"/phxctl/dmcubload "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no dmcubload in the kext build yet"
@@ -100,9 +101,7 @@ jobs:
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"
         # RADV with the Phoenix 2 table (0007); the upstream loader and manifest stay
         cp "$M/libvulkan_radeon.dylib" "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
-        # WindowServer loads only signed code (ad-hoc is enough)
-        codesign --force --sign - "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
-        codesign --verify --strict "$P/PhxGPU/nvmtl/libvulkan_radeon.dylib"
+        # WindowServer loads only signed code (ad-hoc is enough): install.sh signs it on the Mac
         for f in phxboot.sh full.sh bringup5.sh kinst.sh local.phxboot.plist; do cp "tools/phxctl/$f" "$P/gpu/"; done
         cp install/install.sh install/uninstall.sh "$P/"
         cp docs/INSTALL.md docs/TEST_PHOENIX2.md "$P/"
@@ -121,7 +120,7 @@ jobs:
                  gpu/fw/gc_11_0_4_mes1.bin gpu/fw/psp_13_0_11_toc.bin; do
           test -e "$P/$f" || { echo "::error::missing $f"; exit 1; }
         done
-        plutil -lint "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist"
+        python3 -c 'import plistlib,sys; plistlib.load(open(sys.argv[1],"rb"))' "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist"
         grep -q 0x15c81002 "$P/Library/Extensions/PhxAccel.kext/Contents/Info.plist" || { echo "::error::PhxAccel lacks 15C8"; exit 1; }
 
     - uses: actions/upload-artifact@v4
@@ -137,7 +136,7 @@ jobs:
       if: steps.gate.outputs.skip != '1'
       run: |
         cd "$RUNNER_TEMP/out"
-        ditto -c -k --keepParent radearc-package radearc-package.zip
+        zip -qry radearc-package.zip radearc-package   # -y: symlinks stay symlinks (update.sh unpacks with ditto)
         cp radearc-package/RADEARC_BUILD.txt .
         gh release view package-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
           gh release create package-latest --repo "$GITHUB_REPOSITORY" --prerelease --title "Latest install package" \

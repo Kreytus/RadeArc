@@ -19,7 +19,9 @@ on:
 jobs:
   package:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: macos-15-intel
+    # Packaging only copies, ad-hoc signs and zips (ditto, codesign, plutil): any Mac will do. The Intel images queued
+    # for 15 minutes and were cancelled (2026-11-04); the kexts still build on macos-15-intel (build-kexts.yml).
+    runs-on: macos-15
     permissions:
       contents: write   # the rolling "package-latest" release update.sh downloads from
       actions: read

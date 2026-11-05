@@ -144,6 +144,17 @@ NAMED_FULL = [
     ("DPPCLK0_DTO_PARAM", "DPPCLK0_DTO_PHASE", "kDppDtoPhase0", "dccg31_update_dpp_dto"),
     ("DPPCLK0_DTO_PARAM", "DPPCLK0_DTO_MODULO", "kDppDtoModulo0", "dccg31_update_dpp_dto"),
     ("DENTIST_DISPCLK_CNTL", "DENTIST_DISPCLK_RDIVIDER", "kDentistDispRdiv", "the running DISPCLK divider"),
+    # DMCUB inbox 1 (dmub_dcn31.c: is_hw_init, setup_mailbox, get_inbox1_rptr, set_inbox1_wptr) and the CW4 window
+    # that backs it (dmub_dcn31_setup_windows), for phx_dmub_inbox.h
+    ("DMCUB_CNTL", "DMCUB_ENABLE", "kDmcubEnable", "dmub_dcn31_is_hw_init"),
+    ("DMCUB_SCRATCH0", "DMCUB_SCRATCH0", "kDmcubScratch0", "dmub_fw_boot_status (dal_fw bit 0, mailbox_rdy bit 1)"),
+    ("DMCUB_INBOX1_BASE_ADDRESS", "DMCUB_INBOX1_BASE_ADDRESS", "kInbox1Base", "dmub_dcn31_setup_mailbox"),
+    ("DMCUB_INBOX1_SIZE", "DMCUB_INBOX1_SIZE", "kInbox1Size", "dmub_dcn31_setup_mailbox"),
+    ("DMCUB_INBOX1_WPTR", "DMCUB_INBOX1_WPTR", "kInbox1Wptr", "dmub_dcn31_set_inbox1_wptr"),
+    ("DMCUB_INBOX1_RPTR", "DMCUB_INBOX1_RPTR", "kInbox1Rptr", "dmub_dcn31_get_inbox1_rptr"),
+    ("DMCUB_REGION3_CW4_OFFSET", "DMCUB_REGION3_CW4_OFFSET", "kCw4Offset", "dmub_dcn31_setup_windows"),
+    ("DMCUB_REGION3_CW4_OFFSET_HIGH", "DMCUB_REGION3_CW4_OFFSET_HIGH", "kCw4OffsetHigh", "dmub_dcn31_setup_windows"),
+    ("DMCUB_REGION3_CW4_BASE_ADDRESS", "DMCUB_REGION3_CW4_BASE_ADDRESS", "kCw4Base", "dmub_dcn31_setup_windows"),
 ]
 
 

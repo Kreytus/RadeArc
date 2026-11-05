@@ -186,6 +186,15 @@ static constexpr Fld kDppDtoEnable0 = {0x00176, 0, 0x00000001};  // regDPPCLK_DT
 static constexpr Fld kDppDtoPhase0 = {0x00159, 0, 0x000000ff};  // regDPPCLK0_DTO_PARAM.DPPCLK0_DTO_PHASE, dccg31_update_dpp_dto
 static constexpr Fld kDppDtoModulo0 = {0x00159, 16, 0x00ff0000};  // regDPPCLK0_DTO_PARAM.DPPCLK0_DTO_MODULO, dccg31_update_dpp_dto
 static constexpr Fld kDentistDispRdiv = {0x00124, 8, 0x00007f00};  // regDENTIST_DISPCLK_CNTL.DENTIST_DISPCLK_RDIVIDER, the running DISPCLK divider
+static constexpr Fld kDmcubEnable = {0x036b6, 16, 0x00010000};  // regDMCUB_CNTL.DMCUB_ENABLE, dmub_dcn31_is_hw_init
+static constexpr Fld kDmcubScratch0 = {0x036a3, 0, 0xffffffff};  // regDMCUB_SCRATCH0.DMCUB_SCRATCH0, dmub_fw_boot_status (dal_fw bit 0, mailbox_rdy bit 1)
+static constexpr Fld kInbox1Base = {0x03694, 0, 0xffffffff};  // regDMCUB_INBOX1_BASE_ADDRESS.DMCUB_INBOX1_BASE_ADDRESS, dmub_dcn31_setup_mailbox
+static constexpr Fld kInbox1Size = {0x03695, 0, 0xffffffff};  // regDMCUB_INBOX1_SIZE.DMCUB_INBOX1_SIZE, dmub_dcn31_setup_mailbox
+static constexpr Fld kInbox1Wptr = {0x03696, 0, 0xffffffff};  // regDMCUB_INBOX1_WPTR.DMCUB_INBOX1_WPTR, dmub_dcn31_set_inbox1_wptr
+static constexpr Fld kInbox1Rptr = {0x03697, 0, 0xffffffff};  // regDMCUB_INBOX1_RPTR.DMCUB_INBOX1_RPTR, dmub_dcn31_get_inbox1_rptr
+static constexpr Fld kCw4Offset = {0x0367d, 8, 0xffffff00};  // regDMCUB_REGION3_CW4_OFFSET.DMCUB_REGION3_CW4_OFFSET, dmub_dcn31_setup_windows
+static constexpr Fld kCw4OffsetHigh = {0x0367e, 0, 0x0000ffff};  // regDMCUB_REGION3_CW4_OFFSET_HIGH.DMCUB_REGION3_CW4_OFFSET_HIGH, dmub_dcn31_setup_windows
+static constexpr Fld kCw4Base = {0x03669, 0, 0x1fffffff};  // regDMCUB_REGION3_CW4_BASE_ADDRESS.DMCUB_REGION3_CW4_BASE_ADDRESS, dmub_dcn31_setup_windows
 static constexpr unsigned kNumProgRegs = sizeof(kProgRegs) / sizeof(kProgRegs[0]);
 static constexpr unsigned kNumProgFields = sizeof(kProgFields) / sizeof(kProgFields[0]);
 

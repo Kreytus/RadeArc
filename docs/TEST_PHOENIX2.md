@@ -452,3 +452,38 @@ The picture doesn't change; the panel stays at 60 Hz.
   DPM level it picked, perhaps), and the DENTIST divider is the clock to trust.
 - So the SMU path Linux uses for DCN 3.1.4 clocks works on the 8500G, and the pipe takes the 144 Hz clocks without
   underflow.
+
+## Test L, step 4a: the DMUB command path for the HDMI link
+
+The 144 Hz link (pixel clock PLL, HDMI encoder setup, transmitter) is set by DMCUB commands
+(`DMUB_CMD__VBIOS`, docs/PHASE3B_PLAN.md 4e). Linux sends them only to its own DMCUB firmware, so the driver's DMCUB
+has to run first. That is Test J's load, which needs the GPU up.
+
+1. GPU up: remove the kill switch, arm, reboot:
+   ```bash
+   sudo rm /Users/Shared/gpu/phxboot-off && sudo touch /Users/Shared/gpu/phxboot-m2 && sudo nvram phxfb-boot=1 && sudo reboot
+   ```
+2. After the reboot, load the driver's DMCUB (Test J):
+   ```bash
+   cd ~/Desktop/radearc-package && bash testj.sh run
+   ```
+3. Read-only probe, then one no-op command:
+   ```bash
+   bash testl4.sh
+   ```
+   ```bash
+   bash testl4.sh --null
+   ```
+
+`testl4` (`src/amd/phx_dmub_inbox.h`, Linux's `dmub_srv` inbox path) checks `dal_fw` / `mailbox_rdy` / `DMCUB_ENABLE`.
+It finds inbox 1 from `DMCUB_INBOX1_BASE_ADDRESS` / `_SIZE` and the CW4 window behind it, and prints the four 144 Hz
+commands. With `--null` it queues one `DMUB_CMD__NULL`, reads it back, writes `INBOX1_WPTR` and waits for
+`INBOX1_RPTR` (100 ms).
+
+Expected in `~/Desktop/testl4.txt`:
+- `dal_fw 1, mailbox_rdy 1`
+- `inbox 1: … size 8192 … : OK`
+- the four commands in hex
+- `RESULT: READY`, then with `--null`: `DMUB_CMD__NULL: OK (WPTR n -> n+64 …)` and `RESULT: PASS`
+
+Nothing about the picture changes.

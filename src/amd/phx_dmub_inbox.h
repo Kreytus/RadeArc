@@ -81,8 +81,11 @@ inline Status locate(const Io &io, uint64_t fbMcBase, uint64_t vramSize, Inbox *
     ib->wrpt = io.rd(io.ctx, kInbox1Wptr.addr);
     ib->rptr = io.rd(io.ctx, kInbox1Rptr.addr);
     ib->lastWptr = ib->wrpt;
-    if (!ib->capacity || ib->capacity % kCmdBytes || ib->base < ib->cw4Base || ib->cw4Mc < fbMcBase) return Status::BadWindow;
-    ib->vramOff = ib->cw4Mc - fbMcBase + (ib->base - ib->cw4Base);
+    // DMCUB_REGION3_CW4_BASE_ADDRESS keeps 29 bits (dcn_3_1_4_sh_mask.h mask 0x1fffffff): written 0x64000000, it
+    // reads back 0x04000000 (Test L step 4a, 2026-11-05). The inbox's offset into the window is taken in that width.
+    const uint32_t inWin = ib->base & kCw4Base.mask, winBase = ib->cw4Base & kCw4Base.mask;
+    if (!ib->capacity || ib->capacity % kCmdBytes || inWin < winBase || ib->cw4Mc < fbMcBase) return Status::BadWindow;
+    ib->vramOff = ib->cw4Mc - fbMcBase + (inWin - winBase);
     if (ib->vramOff + ib->capacity > vramSize) return Status::BadWindow;
     if (ib->wrpt > ib->capacity || ib->rptr > ib->capacity) return Status::HwFailure;
     return Status::Ok;

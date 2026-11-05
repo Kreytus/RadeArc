@@ -33,7 +33,7 @@ int main() {
     // as dmcubload set it up (Test J): the mailbox window at VRAM 0xD000000 + 0x800000, DMCUB sees it at 0x64000000
     f.reg[kDmcubEnable.addr] = kDmcubEnable.mask;
     f.reg[kDmcubScratch0.addr] = kBootDalFw | kBootMailboxRdy;
-    f.reg[kCw4Base.addr] = 0x64000000;
+    f.reg[kCw4Base.addr] = 0x64000000 & kCw4Base.mask;   // reads back 0x04000000 on the 8500G (29-bit field)
     const uint64_t mc = kMcBase + 0xD000000 + 0x800000;
     f.reg[kCw4Offset.addr] = (uint32_t)mc;
     f.reg[kCw4OffsetHigh.addr] = (uint32_t)(mc >> 32);
@@ -46,6 +46,17 @@ int main() {
     Inbox ib;
     CHECK(locate(io, kMcBase, kVramSize, &ib) == Status::Ok);
     CHECK(ib.vramOff == 0xD000000 + 0x800000 && ib.capacity == 8192 && ib.wrpt == 64);
+    {   // the 8500G's own registers (testl4.txt 2026-11-05): CW4 MC 0x800d0f9900, frame buffer MC base 0x8000000000
+        Fake &g = *new Fake();
+        g.reg[kCw4Base.addr] = 0x04000000; g.reg[kInbox1Base.addr] = 0x64000000; g.reg[kInbox1Size.addr] = 8192;
+        g.reg[kCw4Offset.addr] = 0x0d0f9900; g.reg[kCw4OffsetHigh.addr] = 0x80;
+        g.reg[kInbox1Wptr.addr] = g.reg[kInbox1Rptr.addr] = 64;
+        Io io8{frd, fwr, fvr, fvw, fdelay, &g};
+        Inbox i8;
+        CHECK(locate(io8, 0x8000000000ull, kVramSize, &i8) == Status::Ok);
+        CHECK(i8.vramOff == 0xd0f9900);   // dmcubload's mailbox: VRAM 0xd000000 + 0x0f9900
+        delete &g;
+    }
 
     uint8_t cmd[64];
     phxdmubcmd::transmitterEnable(cmd, phxdmubcmd::Signal::Hdmi, 335770);

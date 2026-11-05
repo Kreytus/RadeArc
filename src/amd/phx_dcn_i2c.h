@@ -101,6 +101,7 @@ static inline const char *resultName(uint32_t r) {
 template <typename Hw> class Ddc1 {
     Hw &hw;
     uint32_t usedWrite = 0, usedBytes = 0, transCount = 0;   // dce_i2c_hw buffer_used_write / buffer_used_bytes / transaction_count
+    uint8_t slave = kEdidAddr;   // the 7-bit address of the current command (EDID 0x50, SCDC 0x54)
 
     void update(uint32_t reg, uint32_t clear, uint32_t set) { hw.wr(reg, (hw.rd(reg) & ~clear) | set); }   // REG_UPDATE_N
     uint32_t swStatus() { return hw.rd(kSwStatus) & kSwStatusMask; }
@@ -228,7 +229,7 @@ template <typename Hw> class Ddc1 {
     // dce_i2c_hw_engine_submit_payload
     uint32_t payload(bool read, bool mot, uint8_t *data, uint32_t length) {
         if (length >= kBufferSize - usedBytes) return kBusy;
-        const uint8_t addr = (uint8_t)((kEdidAddr << 1) | (read ? 1 : 0));
+        const uint8_t addr = (uint8_t)((slave << 1) | (read ? 1 : 0));
         const uint32_t timeout = transactionTimeout(length + 1);
         if (hwBusy()) return kBusy;   // process_transaction's check
         if (transaction(read, mot, addr, data, length)) {
@@ -262,7 +263,12 @@ public:
     }
 
     // One drm_do_probe_ddc_edid transfer: offset byte written to 0x50, `length` (<= 128) bytes read back.
-    uint32_t read(uint8_t offset, uint8_t *out, uint32_t length) {
+    uint32_t read(uint8_t offset, uint8_t *out, uint32_t length) { return readAt(kEdidAddr, offset, out, length); }
+
+    // The same two-payload command to any 7-bit address (link_query_ddc_data with a write and a read buffer:
+    // dce_i2c_submit_command_hw sets MOT on every payload but the last)
+    uint32_t readAt(uint8_t addr, uint8_t offset, uint8_t *out, uint32_t length) {
+        slave = addr;
         uint32_t r = check();
         if (r) return r;
         usedWrite = usedBytes = transCount = 0;
@@ -271,6 +277,24 @@ public:
             r = setSpeed(kSpeedKhz) ? kOk : kNoTimeBase;   // dce_i2c_submit_command_hw: set_speed(cmd->speed)
             if (r == kOk) r = payload(false, true, &offset, 1);
             if (r == kOk) r = payload(true, false, out, length);
+        }
+        if (r != kPadNotI2c && r != kEngineUnavailable) release();
+        return r;
+    }
+
+    // One write payload of `length` bytes to a 7-bit address (link_query_ddc_data with a write buffer only)
+    uint32_t write(uint8_t addr, const uint8_t *data, uint32_t length) {
+        slave = addr;
+        uint32_t r = check();
+        if (r) return r;
+        usedWrite = usedBytes = transCount = 0;
+        r = setup();
+        if (r == kOk) {
+            r = setSpeed(kSpeedKhz) ? kOk : kNoTimeBase;
+            uint8_t buf[16];
+            if (length > sizeof buf) r = kBusy;
+            for (uint32_t i = 0; r == kOk && i < length; i++) buf[i] = data[i];
+            if (r == kOk) r = payload(false, false, buf, length);
         }
         if (r != kPadNotI2c && r != kEngineUnavailable) release();
         return r;

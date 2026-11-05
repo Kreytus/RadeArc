@@ -22,6 +22,7 @@ TESTS = $(TEST_BIN_DIR)/test_rdna3_discovery_uma \
         $(TEST_BIN_DIR)/test_phx_dcn314_blank \
         $(TEST_BIN_DIR)/test_phx_dcn314_dpms \
         $(TEST_BIN_DIR)/test_phx_dcn314_modeset \
+        $(TEST_BIN_DIR)/test_phx_hdmi_avi \
         $(TEST_BIN_DIR)/test_r3n_abi
 
 .PHONY: all test clean kext fixtures
@@ -81,6 +82,9 @@ $(TEST_BIN_DIR)/test_phx_dcn314_dpms: tests/test_phx_dcn314_dpms.cpp src/amd/phx
 
 $(TEST_BIN_DIR)/test_phx_dcn314_modeset: tests/test_phx_dcn314_modeset.cpp src/amd/phx_dcn314_modeset.h src/amd/phx_dcn314_otg.h src/amd/phx_dcn314_dpms.h src/amd/phx_dcn314_blank.h src/amd/phx_dcn314_step2.h src/amd/phx_dcn_timing.h src/amd/phx_dmub_inbox.h src/amd/phx_dcn314_prog_regs.h | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_dcn314_modeset.cpp -o $@
+
+$(TEST_BIN_DIR)/test_phx_hdmi_avi: tests/test_phx_hdmi_avi.cpp src/amd/phx_hdmi_avi.h | $(TEST_BIN_DIR)
+	$(CXX) $(CXXFLAGS) -Isrc/amd tests/test_phx_hdmi_avi.cpp -o $@
 
 $(TEST_BIN_DIR)/test_r3n_abi: src/uapi/r3n_user_client.cpp src/winsys/radv_r3n_winsys.cpp tests/test_r3n_abi.cpp | $(TEST_BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@

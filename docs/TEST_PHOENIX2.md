@@ -487,3 +487,13 @@ Expected in `~/Desktop/testl4.txt`:
 - `RESULT: READY`, then with `--null`: `DMUB_CMD__NULL: OK (WPTR n -> n+64 …)` and `RESULT: PASS`
 
 Nothing about the picture changes.
+
+**Test L step 4a, passed** (package 01aed82, build 46, `hardware/dumps/b650m_8500g/testl4.txt`, after `testj.sh run`
+in the same boot):
+- DMCUB is running the driver's firmware: `CNTL` 0x001900c6, `SCRATCH0` 3 (`dal_fw` 1, `mailbox_rdy` 1).
+- Inbox 1 was found from the registers alone: base 0x64000000, size 8192, CW4 → MC 0x800d0f9900 = VRAM 0xd0f9900
+  (`dmcubload`'s mailbox).
+- The first probe refused: `DMCUB_REGION3_CW4_BASE_ADDRESS` keeps 29 bits and reads back 0x04000000. Fixed in
+  01aed82.
+- `DMUB_CMD__NULL` went through Linux's queue / read-back / WPTR / wait-for-RPTR path: WPTR 64 → 128, RPTR 128.
+- So the command path for `DMUB_CMD__VBIOS` (PLL, encoder setup, transmitter) works from macOS.

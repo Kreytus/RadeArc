@@ -1,0 +1,19 @@
+== 2026-11-05 19:52:38 testl5 --dpms (RadeArc package 7707b806433ceac036d85abec3481a378d512f80)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== 5b preconditions: DMCUB driver firmware, inbox 1 OK; DIG BE0 mode 2 (2 = DVI) enable 1 FE source 0x1; DIG FE0 from OTG0; VPG0 mem power state 0
+== DPMS off (link_set_dpms_off): DMUB OK, DIG_ENABLE now 0
+  3 s off: OTG0 frames +0 (the OTG keeps running, or stops without SYMCLK)
+== DPMS on (link_set_dpms_on): DMUB OK, DIG_ENABLE 1, FIFO reset timeouts 0
+  DIG0_DIG_BE_CNTL                   [0x05571] before 0x00020100 after 0x00020100 same
+  DIG0_DIG_BE_EN_CNTL                [0x05572] before 0x00000101 after 0x00000101 same
+  DIG0_DIG_FE_CNTL                   [0x0554b] before 0x01000000 after 0x01000100 DIFFERS
+  DIG0_DIG_FIFO_CTRL0                [0x05551] before 0x0000001d after 0x2000001d same
+  OTG0_OTG_CONTROL                   [0x05001] before 0x00010301 after 0x00010301 same
+  OTG_PIXEL_RATE_DIV                 [0x0012f] before 0x00000db6 after 0x00000db6 same
+  DME0_DME_CONTROL                   [0x05549] before 0x00000000 after 0x00000000 same
+  DIG0_HDMI_METADATA_PACKET_CONTROL  [0x05553] before 0x00000000 after 0x00000000 same
+  2 s on: frames +95, underflow 0 (was 0)
+RESULT: CHECK (see above; if the picture did not come back, restart)
+testl5 exit 0

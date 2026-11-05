@@ -58,20 +58,22 @@ int main() {
 
     dpmsOff(c);
     CHECK(c.dmub == phxdmubinbox::Status::Ok);
-    CHECK(f.ncmd == 1);
+    CHECK(f.ncmd == 2);
     uint8_t want[64];
     phxdmubcmd::transmitterDisable(want, phxdmubcmd::Signal::Dvi);
     CHECK(memcmp(f.cmds[0], want, 64) == 0);
+    phxdmubcmd::setPixelClock(want, phxdmubcmd::Signal::Dvi, 148500);   // apply_symclk_on_tx_off_wa
+    CHECK(memcmp(f.cmds[1], want, 64) == 0);
     CHECK(fieldGet(f.reg[kDigBeFeSrc.addr], kDigBeFeSrc) == 0);       // BE disconnected from FE 0
     CHECK(fieldGet(f.reg[kDigFifoEnable.addr], kDigFifoEnable) == 0);
 
     dpmsOn(c);
     CHECK(c.dmub == phxdmubinbox::Status::Ok && c.fifoResetTimeouts == 0);
-    CHECK(f.ncmd == 3);
+    CHECK(f.ncmd == 4);
     phxdmubcmd::encoderStreamSetup(want, phxdmubcmd::Signal::Dvi, 148500);
-    CHECK(memcmp(f.cmds[1], want, 64) == 0);
-    phxdmubcmd::transmitterEnable(want, phxdmubcmd::Signal::Dvi, 148500);
     CHECK(memcmp(f.cmds[2], want, 64) == 0);
+    phxdmubcmd::transmitterEnable(want, phxdmubcmd::Signal::Dvi, 148500);
+    CHECK(memcmp(f.cmds[3], want, 64) == 0);
     // back to GOP's encoder state
     CHECK(f.reg[kDigBeMode.addr] == be0);
     CHECK(f.reg[kDigFeSourceSel.addr] == fe0);
@@ -80,10 +82,10 @@ int main() {
     CHECK((f.reg[kDigFifoEnable.addr] & ~kDigFifoResetDone.mask) == (fifo0 & ~kDigFifoResetDone.mask));
     CHECK(fieldGet(f.reg[kOtg0RateDivK2.addr], kOtg0RateDivK2) == kRateDivBy4);
 
-    // a DIG that is already off gets no transmitter disable
+    // a DIG that is already off gets no transmitter disable, only the SYMCLK workaround's pixel clock
     f.reg[kDigBeEnable.addr] = 0; f.ncmd = 0;
     dpmsOff(c);
-    CHECK(f.ncmd == 0);
+    CHECK(f.ncmd == 1 && f.cmds[0][1] == phxdmubcmd::kSubSetPixelClock);
 
     if (fails) { fprintf(stderr, "test_phx_dcn314_dpms: %d failure(s)\n", fails); return 1; }
     printf("test_phx_dcn314_dpms: OK\n");

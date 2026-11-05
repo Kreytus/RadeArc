@@ -186,6 +186,10 @@ NAMED_FULL = [
     ("VPG0_VPG_MEM_PWR", "VPG_GSP_MEM_PWR_STATE", "kVpgMemPwrState", "vpg31_poweron"),
     ("DME0_DME_CONTROL", "METADATA_ENGINE_EN", "kDmeEngineEn", "enc2_set_dynamic_metadata"),
     ("DIG0_HDMI_METADATA_PACKET_CONTROL", "HDMI_METADATA_PACKET_ENABLE", "kHdmiMetaPktEn", "enc2_set_dynamic_metadata"),
+    # dcn31_program_pix_clk for a TMDS signal (dce_clock_source.c; CS_COMMON_MASK_SH_LIST_DCN3_1_4 has PIPE0_DTO_SRC_SEL,
+    # no PHYPLLA_PIXCLK_DOUBLE_RATE_ENABLE), the pixel-clock half of apply_symclk_on_tx_off_wa
+    ("OTG0_PIXEL_RATE_CNTL", "PIPE0_DTO_SRC_SEL", "kPipe0DtoSrcSel", "dcn31_program_pix_clk"),
+    ("PHYPLLA_PIXCLK_RESYNC_CNTL", "PHYPLLA_DCCG_DEEP_COLOR_CNTL", "kPhyPllADeepColor", "dce112_program_pixel_clk_resync"),
     # DMCUB inbox 1 (dmub_dcn31.c: is_hw_init, setup_mailbox, get_inbox1_rptr, set_inbox1_wptr) and the CW4 window
     # that backs it (dmub_dcn31_setup_windows), for phx_dmub_inbox.h
     ("DMCUB_CNTL", "DMCUB_ENABLE", "kDmcubEnable", "dmub_dcn31_is_hw_init"),

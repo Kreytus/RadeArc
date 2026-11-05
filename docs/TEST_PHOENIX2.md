@@ -560,3 +560,20 @@ Expected in `~/Desktop/testl5.txt`:
 - `RESULT: PASS`
 
 If the picture doesn't come back, restart: GOP lights the link at every boot.
+
+**Test L step 5b, first run: the picture didn't come back** (package 7707b80,
+`hardware/dumps/b650m_8500g/testl5b-1.txt`; restart needed):
+- Both DMUB transmitter commands went through, and `DIG_ENABLE` was 0 after off and 1 after on.
+- **OTG0 counted 0 frames during the 3 s off.** With the PHY off it had no clock: on TMDS the OTG runs on the
+  PHY's SYMCLK.
+- After on, OTG0 ran again (95 frames in 2 s, a late start) but `DIG_FIFO_ERROR` was 2, and the monitor got no
+  usable picture.
+- Linux knows this dependency. `apply_symclk_on_tx_off_wa` (dcn314_hwseq.c) programs the pixel clock again right
+  after the transmitter goes off, so SYMCLK keeps running with the TX off. Linux arms it only for HDMI streams
+  (`symclk_ref_cnts.otg`, set in `dcn20_enable_stream_timing`), because it would drive this sink as HDMI. GOP drives
+  it as DVI, and the hardware showed DVI needs it too.
+- Fix (`phx_dcn314_dpms.h`): `dpmsOff` ends with the workaround's `program_pix_clk`: `PIPE0_DTO_SRC_SEL` 0, the DMUB
+  SET_PIXEL_CLOCK at 148.5 MHz, `PHYPLLA_DCCG_DEEP_COLOR_CNTL` 0. The rerun expects about 180 frames during the
+  3 s off and `DIG_FIFO_ERROR` 0 after on.
+- `DIG_FE_CNTL` bit 8 (`DIG_STEREOSYNC_GATE_EN`) ends at 1, the value `enc1_setup_stereo_sync` gives with no 3D. GOP
+  had 0; it only matters for stereo 3D. The compare masks nothing else.

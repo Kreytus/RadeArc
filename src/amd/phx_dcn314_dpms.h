@@ -95,6 +95,17 @@ inline void linkEncSetup(DpmsCtx &c) {   // dcn10_link_encoder_setup
     upd(c.io, kDigBeMode, c.signal == phxdmubcmd::Signal::Hdmi ? kDigModeHdmi : kDigModeDvi);
 }
 
+// dcn31_program_pix_clk for a TMDS signal (dce_clock_source.c): OTG0_PIXEL_RATE_CNTL.PIPE0_DTO_SRC_SEL 0, the DMUB
+// SET_PIXEL_CLOCK, then dce112_program_pixel_clk_resync (8 bpc, no 4:2:0: PHYPLLA_DCCG_DEEP_COLOR_CNTL 0; DCN 3.1.4's
+// clock-source mask has no double-rate field).
+inline void programPixClk(DpmsCtx &c) {
+    upd(c.io, kPipe0DtoSrcSel, 0);
+    uint8_t cmd[64];
+    phxdmubcmd::setPixelClock(cmd, c.signal, c.pixKhz);
+    sendCmd(c, cmd);
+    upd(c.io, kPhyPllADeepColor, 0);
+}
+
 inline void dpmsOff(DpmsCtx &c) {
     // dce110_disable_stream -> reset_dio_stream_encoder
     upd(c.io, kDigFifoEnable, 0);
@@ -106,6 +117,13 @@ inline void dpmsOff(DpmsCtx &c) {
         phxdmubcmd::transmitterDisable(cmd, c.signal);
         sendCmd(c, cmd);
     }
+    // apply_symclk_on_tx_off_wa (dcn314_hwseq.c): "for TMDS signal, OTG relies SYMCLK even if TX video output is off",
+    // so the pixel clock is programmed again and the PHY keeps SYMCLK running with the TX off (SYMCLK_ON_TX_OFF).
+    // Linux arms it through symclk_ref_cnts.otg, which dcn20_enable_stream_timing sets for HDMI only, because Linux
+    // drives an HDMI sink as HDMI. GOP runs this sink as DVI, and Test L 5b showed the same dependency on DVI: without
+    // it OTG0 stopped (0 frames in 3 s), DIG_FIFO_ERROR was set after the link came back and the picture did not
+    // (2026-11-05, hardware/dumps/b650m_8500g/testl5b-1.txt). So it is applied for both TMDS signals.
+    programPixClk(c);
 }
 
 inline void dpmsOn(DpmsCtx &c) {

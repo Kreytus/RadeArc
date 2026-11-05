@@ -110,6 +110,8 @@ static const Snap kSnap[] = {
     {"OTG_PIXEL_RATE_DIV", kOtg0RateDivK1.addr, kOtg0RateDivK1.mask | kOtg0RateDivK2.mask},
     {"DME0_DME_CONTROL", kDmeEngineEn.addr, kDmeEngineEn.mask},
     {"DIG0_HDMI_METADATA_PACKET_CONTROL", kHdmiMetaPktEn.addr, kHdmiMetaPktEn.mask},
+    {"OTG0_PIXEL_RATE_CNTL", kPipe0DtoSrcSel.addr, kPipe0DtoSrcSel.mask},
+    {"PHYPLLA_PIXCLK_RESYNC_CNTL", kPhyPllADeepColor.addr, kPhyPllADeepColor.mask},
 };
 static const unsigned kNSnap = sizeof(kSnap) / sizeof(kSnap[0]);
 
@@ -141,7 +143,7 @@ static int runDpms(Io io) {
     const uint32_t a0 = frames();
     sleep(3);
     const uint32_t a1 = frames();
-    printf("  3 s off: OTG0 frames +%u (the OTG keeps running, or stops without SYMCLK)\n", (a1 - a0) & 0xFFFFFF);
+    printf("  3 s off: OTG0 frames +%u (the SYMCLK workaround keeps it running: ~180 expected)\n", (a1 - a0) & 0xFFFFFF);
     gWriteFailed = false;
     dpmsOn(c);
     printf("== DPMS on (link_set_dpms_on): DMUB %s, DIG_ENABLE %u, FIFO reset timeouts %u%s\n", phxdmubinbox::name(c.dmub),
@@ -158,9 +160,11 @@ static int runDpms(Io io) {
         diff += !same;
         printf("  %-34s [0x%05x] before 0x%08x after 0x%08x %s\n", kSnap[i].name, kSnap[i].addr, before[i], now, same ? "same" : "DIFFERS");
     }
-    printf("  2 s on: frames +%u, underflow %u (was %u)\n", (b1 - b0) & 0xFFFFFF, uf, uf0);
+    const unsigned fifoErr = fieldGet(rd(nullptr, kDigFifoError.addr), kDigFifoError);
+    printf("  2 s on: frames +%u, underflow %u (was %u), DIG_FIFO_ERROR %u (was %u)\n", (b1 - b0) & 0xFFFFFF, uf, uf0, fifoErr,
+           fieldGet(before[3], kDigFifoError));
     const bool pass = c.dmub == phxdmubinbox::Status::Ok && !gWriteFailed && fieldGet(rd(nullptr, kDigBeEnable.addr), kDigBeEnable) &&
-                      ((b1 - b0) & 0xFFFFFF) > 100 && !diff;
+                      ((a1 - a0) & 0xFFFFFF) > 100 && ((b1 - b0) & 0xFFFFFF) > 100 && !diff && !fifoErr;
     printf("RESULT: %s\n", pass ? "PASS (Linux's DPMS off / on for the DVI link works; the encoders are back as GOP had them)"
                                 : "CHECK (see above; if the picture did not come back, restart)");
     return 0;

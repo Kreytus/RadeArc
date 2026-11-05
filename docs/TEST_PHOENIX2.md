@@ -635,3 +635,39 @@ If the picture doesn't come back, restart.
   the DIG enabled, and the picture back.
 - So everything the 144 Hz switch does is proven on hardware. The remaining differences are the values: the 144 Hz
   timing, pixel clock and DML plan; HDMI instead of DVI (5d); the clocks raised first (step 3).
+
+## Test L, step 5d: the same mode set, coming up as HDMI
+
+After `bash testj.sh run` in the same boot:
+```bash
+cd ~/Desktop/radearc-package && bash testl5.sh --hdmi
+```
+
+The 144 Hz mode needs 335.77 MHz, and Linux won't drive DVI above 165 MHz, so it must be HDMI. 5d runs 5c's mode set
+at 60 Hz, but the link comes up as HDMI (`phx_dcn314_hdmi.h`, Linux v6.17):
+- `enc314_stream_encoder_hdmi_set_stream_attribute`:
+  - the DMUB `STREAM_SETUP` for HDMI
+  - `HDMI_CONTROL`: packet version 1, keep-out, 8 bpc, no scrambling below 340 MHz
+  - the General Control packet every frame, `AVMUTE` 0
+- `enc3_stream_encoder_update_hdmi_info_packets`: the AVI InfoFrame (CTA VIC 16, RGB, `phx_hdmi_avi.h`) goes into
+  VPG generic packet 0, sent every frame on line 2. The other six packets are off: no vendor, HF-VSIF, SPD, HDR, gamut
+  or VTEM packet, as Linux has for this stream.
+- `write_scdc_data` over DDC1 (0x54): `SOURCE_VERSION` 1 if the sink has SCDC, then `TMDS_CONFIG` 0 (below 340 MHz).
+  A sink without SCDC NACKs this, and Linux ignores that.
+- No audio endpoint (Linux with `amdgpu.audio=0`).
+
+**The monitor loses the signal for a moment.** It may then show its "HDMI" input banner. The picture should look the
+same: the DIG now sends HDMI data islands, which DVI mode didn't.
+
+Expected in `~/Desktop/testl5.txt`:
+- `going to HDMI`, `DDC1 ok`
+- `HDMI up: SCDC read ok, sink version 1, writes ok, TMDS_CONFIG after 0 ...; VPG idle; DIG_MODE 3; AVI InfoFrame 82 02 0d, sending 1 on line 2`
+  (if the monitor has no SCDC: `sink version 0` and `TMDS_CONFIG after 255`, which is fine)
+- `DMUB OK; ... timing ok; front end ok`
+- 3 s after: about 180 frames, `DIG_FIFO_ERROR 0`, `DIG_ENABLE 1`
+- `RESULT: PASS (Linux's mode set brought the pipe up as HDMI at 60 Hz)`
+
+To go back to DVI (GOP's signal): `bash testl5.sh --dvi`. A restart does the same. Once in HDMI, `--hdmi` runs the
+HDMI → HDMI mode set (SCDC set to legacy on the way down, as Linux does).
+
+If the picture doesn't come back, restart.

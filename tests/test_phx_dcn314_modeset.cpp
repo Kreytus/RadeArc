@@ -39,11 +39,13 @@ static uint32_t fvr(void *, uint64_t off) { return gF->vram[(off - 0xd0f9900) / 
 static void fvw(void *, uint64_t off, uint32_t v) { gF->vram[(off - 0xd0f9900) / 4] = v; }
 static void fdelay(void *, unsigned) {}
 
-int main() {
+static const phxtiming::Mode m60 = {148500, 1920, 88, 44, 2200, 1080, 4, 5, 1125, true, true};   // EDID mode 0 (Test K)
+static const uint32_t S = 0x34c0;
+
+// GOP's state (Test K / testl / testl5 dumps) in a fresh fake engine
+static Fake &freshGop() {
     Fake &f = *new Fake(); gF = &f;
-    const phxtiming::Mode m60 = {148500, 1920, 88, 44, 2200, 1080, 4, 5, 1125, true, true};   // EDID mode 0 (Test K)
     const phxtiming::OtgRegs t = phxtiming::otgRegs(m60);
-    const uint32_t S = 0x34c0;
     // GOP's state (Test K / testl / testl5 dumps)
     f.reg[S + phxtiming::kOtgHTotal] = t.hTotal; f.reg[S + phxtiming::kOtgHBlankStartEnd] = t.hBlankStartEnd;
     f.reg[S + phxtiming::kOtgHSyncA] = t.hSyncA; f.reg[S + phxtiming::kOtgVTotal] = t.vTotal;
@@ -60,13 +62,72 @@ int main() {
     f.reg[phxdmubinbox::kInbox1Size.addr] = 8192;
     f.reg[phxdmubinbox::kCw4Offset.addr] = 0x0d0f9900; f.reg[phxdmubinbox::kCw4OffsetHigh.addr] = 0x80;
     f.reg[phxdmubinbox::kInbox1Wptr.addr] = f.reg[phxdmubinbox::kInbox1Rptr.addr] = 128;
+    return f;
+}
 
+// a fake SCDC sink (SCDC version 1): records what is written, answers reads from its registers
+static uint8_t gScdc[256];
+static uint8_t gScdcWrites[8][2]; static unsigned gNScdcWrites;
+static bool sRead(void *, uint8_t off, uint8_t *v) { *v = gScdc[off]; return true; }
+static bool sWrite(void *, const uint8_t *d, unsigned n) {
+    if (n == 2 && gNScdcWrites < 8) { gScdcWrites[gNScdcWrites][0] = d[0]; gScdcWrites[gNScdcWrites++][1] = d[1]; gScdc[d[0]] = d[1]; }
+    return n == 2;
+}
+
+// 5d: GOP's DVI stream down, the same 60 Hz mode up as HDMI with the AVI InfoFrame and SCDC
+static void testDviToHdmi() {
+    Fake &f = freshGop();
+    phxdmubinbox::Io dio{frd, fwr, fvr, fvw, fdelay, nullptr};
+    phxdmubinbox::Inbox ib;
+    CHECK(phxdmubinbox::locate(dio, 0x8000000000ull, 256ull << 20, &ib) == phxdmubinbox::Status::Ok);
+    DpmsCtx c{Io{frd, fwr, fdelay, nullptr}, dio, &ib, phxdmubcmd::Signal::Dvi, 148500};
+    gScdc[kScdcSinkVersion] = 1;
+    const ScdcIo scdc{sRead, sWrite, nullptr};
+    c.scdc = &scdc;
+    c.avi = phxavi::avi(16, 0, 2200, 1125);
+    const ModesetResult r = modeset(c, m60, kDml60, phxdmubcmd::Signal::Hdmi);
+    CHECK(r.timingOk && r.frontEnd == Result::Ok && c.dmub == phxdmubinbox::Status::Ok && c.vpgIdle);
+    // DMUB: the DVI transmitter off and its SYMCLK workaround as DVI, then everything as HDMI (ATOM mode 3)
+    CHECK(f.ncmd == 5);
+    if (f.ncmd == 5) {
+        CHECK(f.cmds[0][1] == phxdmubcmd::kSubDig1TransmitterControl && f.cmds[0][4 + 2] == phxdmubcmd::kDigModeDvi);
+        CHECK(f.cmds[1][1] == phxdmubcmd::kSubSetPixelClock && f.cmds[1][4 + 6] == phxdmubcmd::kDigModeDvi);
+        CHECK(f.cmds[2][1] == phxdmubcmd::kSubSetPixelClock && f.cmds[2][4 + 6] == phxdmubcmd::kDigModeHdmi);
+        CHECK(f.cmds[3][1] == phxdmubcmd::kSubDigxEncoderControl && f.cmds[3][4 + 2] == phxdmubcmd::kDigModeHdmi);
+        CHECK(f.cmds[4][1] == phxdmubcmd::kSubDig1TransmitterControl && f.cmds[4][4 + 2] == phxdmubcmd::kDigModeHdmi);
+    }
+    CHECK(fieldGet(f.reg[kDigBeMode.addr], kDigBeMode) == kDigModeHdmi);
+    // the HDMI engine: GEN_VERSION 1, KEEPOUT 1, NO_EXTRA_NULL 1, no scrambling below 340 MHz; GC every frame, not muted
+    const uint32_t hc = f.reg[kHdmiPktGenVer.addr];
+    CHECK(fieldGet(hc, kHdmiPktGenVer) == 1 && fieldGet(hc, kHdmiKeepout) == 1 && fieldGet(hc, kHdmiNoExtraNull) == 1 &&
+          fieldGet(hc, kHdmiScramble) == 0 && fieldGet(hc, kHdmiClkChanRate) == 0 && fieldGet(hc, kHdmiDeepColorDepth) == 0);
+    CHECK(fieldGet(f.reg[kHdmiGcCont.addr], kHdmiGcCont) == 1 && fieldGet(f.reg[kHdmiGcSend.addr], kHdmiGcSend) == 1);
+    CHECK(fieldGet(f.reg[kHdmiGcAvmute.addr], kHdmiGcAvmute) == 0);
+    // the AVI InfoFrame went into VPG packet 0 (header dword, then sb) and is sent every frame on line 2
+    uint32_t vpg[9]; unsigned nv = 0;
+    for (unsigned i = 0; i < f.nev && nv < 9; i++) if (f.ev[i].addr == kVpgData.addr) vpg[nv++] = f.ev[i].val;
+    CHECK(nv == 9);
+    CHECK(vpg[0] == (0x82u | 0x02u << 8 | 0x0du << 16));
+    CHECK(vpg[1] == ((uint32_t)c.avi.sb[0] | (uint32_t)c.avi.sb[1] << 8 | (uint32_t)c.avi.sb[2] << 16 | (uint32_t)c.avi.sb[3] << 24));
+    CHECK(fieldGet(f.reg[kHdmiGen0Cont.addr], kHdmiGen0Cont) == 1 && fieldGet(f.reg[kHdmiGen0Send.addr], kHdmiGen0Send) == 1);
+    CHECK(fieldGet(f.reg[kHdmiGen0Line.addr], kHdmiGen0Line) == 2);
+    CHECK(fieldGet(f.reg[kHdmiGen5Cont.addr], kHdmiGen5Cont) == 0);
+    // SCDC on the way up: source version 1 (the sink is version 1), TMDS_CONFIG 0 below 340 MHz; none on the way down (DVI)
+    CHECK(gNScdcWrites == 2 && gScdcWrites[0][0] == kScdcSourceVersion && gScdcWrites[0][1] == 1 &&
+          gScdcWrites[1][0] == kScdcTmdsConfig && gScdcWrites[1][1] == 0);
+    CHECK(c.scdcTmdsAfterOn == 0);
+    CHECK(!isBlanked(c.io));
+}
+
+int main() {
+    Fake &f = freshGop();
+    const phxtiming::OtgRegs t = phxtiming::otgRegs(m60);
     phxdmubinbox::Io dio{frd, fwr, fvr, fvw, fdelay, nullptr};
     phxdmubinbox::Inbox ib;
     CHECK(phxdmubinbox::locate(dio, 0x8000000000ull, 256ull << 20, &ib) == phxdmubinbox::Status::Ok);
     DpmsCtx c{Io{frd, fwr, fdelay, nullptr}, dio, &ib, phxdmubcmd::Signal::Dvi, 148500};
 
-    const ModesetResult r = modeset(c, m60, kDml60);
+    const ModesetResult r = modeset(c, m60, kDml60, phxdmubcmd::Signal::Dvi);
     CHECK(r.otg.busyCleared && r.otg.inClkOn && r.otg.otgClkOn && r.timingOk && r.frontEnd == Result::Ok);
     CHECK(c.dmub == phxdmubinbox::Status::Ok);
     // DMUB: transmitter disable, SET_PIXEL_CLOCK (SYMCLK workaround), SET_PIXEL_CLOCK (enable_stream_timing),
@@ -98,6 +159,7 @@ int main() {
     CHECK(fieldGet(f.reg[kDigBeFeSrc.addr], kDigBeFeSrc) == 1 && fieldGet(f.reg[kDigFifoEnable.addr], kDigFifoEnable) == 1);
     CHECK(frameWaitUs(m60) == 1125u * 14u);   // Linux's integer arithmetic: 2200 * 10000 / 1485000 = 14
 
+    testDviToHdmi();
     if (fails) { fprintf(stderr, "test_phx_dcn314_modeset: %d failure(s)\n", fails); return 1; }
     printf("test_phx_dcn314_modeset: OK (%u register writes, %u DMUB commands)\n", f.nev, f.ncmd);
     return 0;

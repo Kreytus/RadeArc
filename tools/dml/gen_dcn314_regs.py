@@ -230,6 +230,39 @@ NAMED_FULL = [
     ("OPP_PIPE0_OPP_PIPE_CONTROL", "OPP_PIPE_CLOCK_EN", "kOppPipeClockEn", "opp1_pipe_clock_control"),
     ("FMT0_FMT_422_CONTROL", "FMT_LEFT_EDGE_EXTRA_PIXEL_COUNT", "kFmtLeftEdge", "opp2_program_left_edge_extra_pixel"),
     ("DENTIST_DISPCLK_CNTL", "DENTIST_DISPCLK_WDIVIDER", "kDentistDispWdiv", "dccg314_trigger_dio_fifo_resync"),
+    # Test L 5d, HDMI on DIG FE 0 (phx_dcn314_hdmi.h): enc314_stream_encoder_hdmi_set_stream_attribute,
+    # enc1_reset_hdmi_stream_attribute, enc1_stream_encoder_set_avmute, enc3_stream_encoder_update_hdmi_info_packets /
+    # enc3_update_hdmi_info_packet / enc3_stream_encoder_stop_hdmi_info_packets, afmt3_audio_info_immediate_update,
+    # vpg3_update_generic_info_packet (SRI(AFMT_CNTL, DIG, id) etc. in dcn314_dio_stream_encoder.h, VPG0, AFMT0)
+    ("DIG0_HDMI_CONTROL", "HDMI_PACKET_GEN_VERSION", "kHdmiPktGenVer", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_KEEPOUT_MODE", "kHdmiKeepout", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_DEEP_COLOR_ENABLE", "kHdmiDeepColorEn", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_DEEP_COLOR_DEPTH", "kHdmiDeepColorDepth", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_DATA_SCRAMBLE_EN", "kHdmiScramble", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_NO_EXTRA_NULL_PACKET_FILLED", "kHdmiNoExtraNull", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_CONTROL", "HDMI_CLOCK_CHANNEL_RATE", "kHdmiClkChanRate", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_VBI_PACKET_CONTROL", "HDMI_GC_CONT", "kHdmiGcCont", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_VBI_PACKET_CONTROL", "HDMI_GC_SEND", "kHdmiGcSend", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_VBI_PACKET_CONTROL", "HDMI_NULL_SEND", "kHdmiNullSend", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_VBI_PACKET_CONTROL", "HDMI_ACP_SEND", "kHdmiAcpSend", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_INFOFRAME_CONTROL0", "HDMI_AUDIO_INFO_SEND", "kHdmiAudioInfoSend", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_INFOFRAME_CONTROL1", "HDMI_AUDIO_INFO_LINE", "kHdmiAudioInfoLine", "enc314 hdmi_set_stream_attribute"),
+    ("DIG0_HDMI_GC", "HDMI_GC_AVMUTE", "kHdmiGcAvmute", "enc1_stream_encoder_set_avmute"),
+    ("DIG0_HDMI_DB_CONTROL", "HDMI_DB_DISABLE", "kHdmiDbDisable", "enc3_stream_encoder_update_hdmi_info_packets"),
+    ("DIG0_AFMT_CNTL", "AFMT_AUDIO_CLOCK_EN", "kAfmtAudioClockEn", "enc3_stream_encoder_update_hdmi_info_packets"),
+    ("AFMT0_AFMT_INFOFRAME_CONTROL0", "AFMT_AUDIO_INFO_UPDATE", "kAfmtAudioInfoUpdate", "afmt3_audio_info_immediate_update"),
+] + [
+    ("DIG0_HDMI_GENERIC_PACKET_CONTROL0", "HDMI_GENERIC%d_%s" % (i, w), "kHdmiGen%d%s" % (i, w.capitalize()),
+     "enc3_update_hdmi_info_packet") for i in range(7) for w in ("CONT", "SEND")
+] + [
+    ("DIG0_HDMI_GENERIC_PACKET_CONTROL%d" % (1 + i // 2), "HDMI_GENERIC%d_LINE" % i, "kHdmiGen%dLine" % i,
+     "enc3_update_hdmi_info_packet / stop_hdmi_info_packets") for i in range(8)
+] + [
+    ("VPG0_VPG_GENERIC_STATUS", "VPG_GENERIC_CONFLICT_OCCURED", "kVpgConflict", "vpg3_update_generic_info_packet"),
+    ("VPG0_VPG_GENERIC_STATUS", "VPG_GENERIC_CONFLICT_CLR", "kVpgConflictClr", "vpg3_update_generic_info_packet"),
+    ("VPG0_VPG_GENERIC_PACKET_ACCESS_CTRL", "VPG_GENERIC_DATA_INDEX", "kVpgDataIndex", "vpg3_update_generic_info_packet"),
+    ("VPG0_VPG_GENERIC_PACKET_DATA", "VPG_GENERIC_DATA_BYTE0", "kVpgData", "vpg3_update_generic_info_packet (whole dwords)"),
+    ("VPG0_VPG_GSP_IMMEDIATE_UPDATE_CTRL", "VPG_GENERIC0_IMMEDIATE_UPDATE", "kVpgGen0Immediate", "vpg3_update_generic_info_packet"),
     # DMCUB inbox 1 (dmub_dcn31.c: is_hw_init, setup_mailbox, get_inbox1_rptr, set_inbox1_wptr) and the CW4 window
     # that backs it (dmub_dcn31_setup_windows), for phx_dmub_inbox.h
     ("DMCUB_CNTL", "DMCUB_ENABLE", "kDmcubEnable", "dmub_dcn31_is_hw_init"),
@@ -242,6 +275,10 @@ NAMED_FULL = [
     ("DMCUB_REGION3_CW4_OFFSET_HIGH", "DMCUB_REGION3_CW4_OFFSET_HIGH", "kCw4OffsetHigh", "dmub_dcn31_setup_windows"),
     ("DMCUB_REGION3_CW4_BASE_ADDRESS", "DMCUB_REGION3_CW4_BASE_ADDRESS", "kCw4Base", "dmub_dcn31_setup_windows"),
 ]
+
+# Whole registers the sequences write with REG_SET of zero fields or REG_WRITE (only the address is needed):
+# enc3_stream_encoder_stop_hdmi_info_packets zeroes HDMI_GENERIC_PACKET_CONTROL0-4 and 6-10 (dcn30_dio_stream_encoder.c)
+REGS_ONLY = [("DIG0_HDMI_GENERIC_PACKET_CONTROL%d" % i, "kRegHdmiGenPktCtl%d" % i) for i in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10)]
 
 
 def read(rel):
@@ -362,6 +399,11 @@ def main():
             sys.exit("%s / %s missing from the Linux headers" % (reg, k))
         named.append("static constexpr Fld %s = {0x%05x, %d, 0x%08x};  // reg%s.%s, %s" % (
             cname, SEG[b] + o, sh[k + "__SHIFT"], sh[k + "_MASK"], reg, field, src))
+    for reg, cname in REGS_ONLY:
+        o, b = off.get("reg" + reg), off.get("reg" + reg + "_BASE_IDX")
+        if o is None or b is None:
+            sys.exit("reg%s missing from dcn_3_1_4_offset.h" % reg)
+        named.append("static constexpr uint32_t %s = 0x%05x;  // reg%s 0x%04x, BASE_IDX %d" % (cname, SEG[b] + o, reg, o, b))
 
     hdr = """// phx_dcn314_prog_regs.h: GENERATED by tools/dml/gen_dcn314_regs.py from Linux v6.17's dcn_3_1_4_offset.h,
 // dcn_3_1_4_sh_mask.h and the HUBP_REG_LIST_DCN30 / OPTC_COMMON_REG_LIST_DCN3_14 register lists. Do not edit.

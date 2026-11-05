@@ -38,6 +38,7 @@
 #include "phx_dcn314_step2.h"
 #include "phx_dmub_inbox.h"
 #include "phx_dmub_vbios_cmd.h"
+#include "phx_dcn314_hdmi.h"
 
 namespace phxdcn314 {
 
@@ -46,6 +47,8 @@ static constexpr uint32_t kDigModeDvi = 2, kDigModeHdmi = 3;
 static constexpr uint32_t kRateDivBy1 = 0, kRateDivBy4 = 3;   // enum pixel_rate_div (dccg.h)
 
 struct DpmsCtx {
+    DpmsCtx(Io i, phxdmubinbox::Io d, phxdmubinbox::Inbox *in, phxdmubcmd::Signal s, uint32_t pix)
+        : io(i), dio(d), ib(in), signal(s), pixKhz(pix) {}
     Io io;
     phxdmubinbox::Io dio;
     phxdmubinbox::Inbox *ib;
@@ -53,6 +56,12 @@ struct DpmsCtx {
     uint32_t pixKhz;             // phy_pix_clk = pix_clk_100hz / 10
     phxdmubinbox::Status dmub = phxdmubinbox::Status::Ok;   // the first DMUB failure, if any
     unsigned fifoResetTimeouts = 0;
+    // HDMI only (phx_dcn314_hdmi.h): DDC1 for SCDC, the AVI InfoFrame, and what SCDC answered
+    const ScdcIo *scdc = nullptr;
+    phxavi::InfoPacket avi{};
+    ScdcResult scdcOff, scdcOn;
+    uint8_t scdcTmdsAfterOn = 0xff;
+    bool vpgIdle = true;
 };
 
 inline void upd(const Io &io, const Fld &f, uint32_t v) { io.wr(io.ctx, f.addr, fieldSet(io.rd(io.ctx, f.addr), f, v)); }
@@ -106,7 +115,17 @@ inline void programPixClk(DpmsCtx &c) {
     upd(c.io, kPhyPllADeepColor, 0);
 }
 
+inline bool isHdmi(const DpmsCtx &c) { return c.signal == phxdmubcmd::Signal::Hdmi; }
+
 inline void dpmsOff(DpmsCtx &c) {
+    if (isHdmi(c)) {
+        setAvmute(c.io, true);                           // link_set_dpms_off: set_avmute (HDMI, no skip_avmute patch)
+        // (no audio stream; blank_stream does nothing for HDMI) then SCDC back to legacy: "vbios only handles 165Mhz"
+        if (c.scdc) c.scdcOff = writeScdc(*c.scdc, 165000, false);
+        // dce110_disable_stream for HDMI
+        stopHdmiInfoPackets(c.io);
+        resetHdmiStreamAttribute(c.io);
+    }
     // dce110_disable_stream -> reset_dio_stream_encoder
     upd(c.io, kDigFifoEnable, 0);
     upd(c.io, kDigFifoPixMode, 0);
@@ -132,14 +151,22 @@ inline void dpmsOn(DpmsCtx &c) {
     upd(c.io, kOtgOutMux, 0);                            // OUT_MUX_DIO
     upd(c.io, kDigFeStereoSel, 0);                       // enc1_setup_stereo_sync(OTG0, false)
     upd(c.io, kDigFeStereoGate, 1);
-    phxdmubcmd::encoderStreamSetup(cmd, c.signal, c.pixKhz);   // dvi_set_stream_attribute (DVI: pix_clk_100hz / 10)
+    // dvi_set_stream_attribute (pix_clk_100hz / 10) or hdmi_set_stream_attribute (actual_pix_clk_khz): the DMUB
+    // STREAM_SETUP, then enc1_stream_encoder_set_stream_attribute_helper, then for HDMI the HDMI engine
+    phxdmubcmd::encoderStreamSetup(cmd, c.signal, c.pixKhz);
     sendCmd(c, cmd);
     upd(c.io, kDigFeTmdsPixEnc, 0);                      // RGB
     upd(c.io, kDigFeTmdsColFmt, 0);
-    // enable_link -> enable_link_hdmi
+    if (isHdmi(c)) {
+        hdmiStreamAttributeRegs(c.io, c.pixKhz);
+        c.vpgIdle = updateHdmiInfoPackets(c.io, c.avi) && c.vpgIdle;   // update_info_frame (vpg31_poweron: nothing)
+    }
+    // enable_link -> enable_link_hdmi: SCDC for HDMI, the stream encoder, the transmitter, read_scdc_data
+    if (isHdmi(c) && c.scdc) c.scdcOn = writeScdc(*c.scdc, c.pixKhz, false);
     setupStreamEncoder(c);
     phxdmubcmd::transmitterEnable(cmd, c.signal, c.pixKhz);
     sendCmd(c, cmd);
+    if (isHdmi(c) && c.scdc) c.scdcTmdsAfterOn = readScdcTmdsConfig(*c.scdc);
     linkEncSetup(c);                                     // the second setup
     // dcn20_enable_stream
     const uint32_t k1 = fieldGet(c.io.rd(c.io.ctx, kOtg0RateDivK1.addr), kOtg0RateDivK1);
@@ -151,6 +178,7 @@ inline void dpmsOn(DpmsCtx &c) {
     upd(c.io, kDmeEngineEn, 0);                          // dcn30_program_dmdata_engine, no dynamic metadata
     upd(c.io, kHdmiMetaPktEn, 0);
     upd(c.io, kDigFeDolbyEn, 0);
+    if (isHdmi(c)) c.vpgIdle = updateHdmiInfoPackets(c.io, c.avi) && c.vpgIdle;   // dcn20_enable_stream: update_info_frame
 }
 
 }  // namespace phxdcn314

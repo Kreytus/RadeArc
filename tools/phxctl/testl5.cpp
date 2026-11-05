@@ -21,6 +21,7 @@
  * build: clang++ -std=c++17 -O2 -I../../src/amd -o testl5 testl5.cpp -framework IOKit -framework CoreFoundation
  */
 #include "phx_dcn314_modeset.h"
+#include "phx_dcn_i2c.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
@@ -184,7 +185,27 @@ static const uint32_t kDpgRegs[7] = {kDpgEn.addr, kDpgWidth.addr, kDpgXOffset.ad
 static const char *const kDpgNames[7] = {"DPG_CONTROL", "DPG_DIMENSIONS", "DPG_OFFSET_SEGMENT", "DPG_COLOUR_B_CB",
                                          "DPG_COLOUR_G_Y", "DPG_COLOUR_R_CR", "DPG_RAMP_CONTROL"};
 
-static int runModeset(Io io) {
+// DDC1 for SCDC through the display engine's I2C (phx_dcn_i2c.h, dce_i2c_hw), from user space
+struct UHw {
+    uint32_t rd(uint32_t r) { return ::rd(nullptr, r); }
+    void wr(uint32_t r, uint32_t v) { ::wr(nullptr, r, v); }
+    void delayUs(uint32_t us) { usleep(us); }
+};
+static UHw gHw;
+static uint32_t gScdcLastErr;
+static bool scdcRead(void *, uint8_t off, uint8_t *v) {
+    phxi2c::Ddc1<UHw> ddc(gHw);
+    gScdcLastErr = ddc.readAt(0x54, off, v, 1);
+    return gScdcLastErr == phxi2c::kOk;
+}
+static bool scdcWrite(void *, const uint8_t *d, unsigned n) {
+    phxi2c::Ddc1<UHw> ddc(gHw);
+    gScdcLastErr = ddc.write(0x54, d, n);
+    return gScdcLastErr == phxi2c::kOk;
+}
+
+// target: 0 keep the signal GOP / the last run left, 2 DVI, 3 HDMI
+static int runModeset(Io io, unsigned target) {
     phxdmubinbox::Io dio{rd, wr, vrd, vwr, delayUs, nullptr};
     phxdmubinbox::Inbox ib;
     const uint64_t mcBase = prop64("phx-fb-mc-base");
@@ -200,18 +221,38 @@ static int runModeset(Io io) {
     const uint32_t be = rd(nullptr, kDigBeMode.addr);
     const unsigned digMode = fieldGet(be, kDigBeMode), digEn = fieldGet(rd(nullptr, kDigBeEnable.addr), kDigBeEnable);
     const unsigned vpgPwr = fieldGet(rd(nullptr, kVpgMemPwrState.addr), kVpgMemPwrState);
-    printf("== 5c preconditions: DMCUB %s, inbox 1 %s; OTG0 timing %s; DLG refclk %u kHz; DIG BE0 mode %u enable %u; VPG0 %u\n",
-           rdy ? "driver firmware" : "NOT the driver's", phxdmubinbox::name(loc), sameTiming ? "= EDID mode 0 (60 Hz)" : "NOT the 60 Hz mode",
-           dchubRefKhz(timer), digMode, digEn, vpgPwr);
-    if (!rdy || loc != phxdmubinbox::Status::Ok || !sameTiming || dchubRefKhz(timer) != 24000 || digMode != kDigModeDvi || !digEn || vpgPwr) {
-        fprintf(stderr, "testl5: not the state 5c is written for (run testj.sh run first?): nothing written\n");
+    phxi2c::Ddc1<UHw> ddc(gHw);
+    const uint32_t ddcOk = ddc.check();
+    const unsigned to = target ? target : digMode;
+    printf("== 5c/5d preconditions: DMCUB %s, inbox 1 %s; OTG0 timing %s; DLG refclk %u kHz; DIG BE0 mode %u (2 DVI, 3 HDMI) enable %u;"
+           " VPG0 %u; DDC1 %s; going to %s\n", rdy ? "driver firmware" : "NOT the driver's", phxdmubinbox::name(loc),
+           sameTiming ? "= EDID mode 0 (60 Hz)" : "NOT the 60 Hz mode", dchubRefKhz(timer), digMode, digEn, vpgPwr,
+           phxi2c::resultName(ddcOk), to == kDigModeHdmi ? "HDMI" : "DVI");
+    if (!rdy || loc != phxdmubinbox::Status::Ok || !sameTiming || dchubRefKhz(timer) != 24000 ||
+        (digMode != kDigModeDvi && digMode != kDigModeHdmi) || !digEn || vpgPwr || (to == kDigModeHdmi && ddcOk != phxi2c::kOk)) {
+        fprintf(stderr, "testl5: not the state this is written for (run testj.sh run first?): nothing written\n");
         return 3;
     }
     const unsigned uf0 = fieldGet(rd(nullptr, kHubpUnderflow.addr), kHubpUnderflow);
     signal(SIGINT, SIG_IGN);
-    DpmsCtx c{io, dio, &ib, phxdmubcmd::Signal::Dvi, m60.pixelKhz};
-    const ModesetResult r = modeset(c, m60, kDml60);
-    printf("== mode set (60 Hz DVI, Linux's order): DMUB %s; OTG_BUSY cleared %s, OPTC clock on %s, OTG clock on %s%s;"
+    const phxdmubcmd::Signal from = digMode == kDigModeHdmi ? phxdmubcmd::Signal::Hdmi : phxdmubcmd::Signal::Dvi;
+    DpmsCtx c{io, dio, &ib, from, m60.pixelKhz};
+    const ScdcIo scdc{scdcRead, scdcWrite, nullptr};
+    c.scdc = &scdc;
+    c.avi = phxavi::avi(16, 0, m60.hTotal, m60.vTotal);   // CTA VIC 16, no picture aspect (phx_hdmi_avi.h)
+    const ModesetResult r = modeset(c, m60, kDml60, to == kDigModeHdmi ? phxdmubcmd::Signal::Hdmi : phxdmubcmd::Signal::Dvi);
+    if (from == phxdmubcmd::Signal::Hdmi)
+        printf("== SCDC going down (legacy, 165 MHz): read %s, sink version %u, writes %s\n", c.scdcOff.readOk ? "ok" : "FAILED",
+               c.scdcOff.sinkVersion, c.scdcOff.writeOk ? "ok" : "FAILED");
+    if (to == kDigModeHdmi)
+        printf("== HDMI up: SCDC read %s, sink version %u, writes %s, TMDS_CONFIG after %u (last I2C result %s); VPG %s;"
+               " DIG_MODE %u; AVI InfoFrame %02x %02x %02x, sending %u on line %u\n", c.scdcOn.readOk ? "ok" : "FAILED",
+               c.scdcOn.sinkVersion, c.scdcOn.writeOk ? "ok" : "FAILED", c.scdcTmdsAfterOn, phxi2c::resultName(gScdcLastErr),
+               c.vpgIdle ? "idle" : "CONFLICT wait timed out", fieldGet(rd(nullptr, kDigBeMode.addr), kDigBeMode), c.avi.hb0, c.avi.hb1,
+               c.avi.hb2, fieldGet(rd(nullptr, kHdmiGen0Send.addr), kHdmiGen0Send), fieldGet(rd(nullptr, kHdmiGen0Line.addr), kHdmiGen0Line));
+    printf("== mode set (60 Hz %s -> %s, Linux's order): ", from == phxdmubcmd::Signal::Hdmi ? "HDMI" : "DVI",
+           to == kDigModeHdmi ? "HDMI" : "DVI");
+    printf("DMUB %s; OTG_BUSY cleared %s, OPTC clock on %s, OTG clock on %s%s;"
            " timing %s; front end %s; FIFO reset timeouts %u%s\n", phxdmubinbox::name(c.dmub), r.otg.busyCleared ? "yes" : "NO",
            r.otg.inClkOn ? "yes" : "NO", r.otg.otgClkOn ? "yes" : "NO", r.otg.underflowCleared ? " (an OTG underflow was cleared)" : "",
            r.timingOk ? "ok" : "BAD", r.frontEnd == Result::Ok ? "ok" : "NOT ok", c.fifoResetTimeouts, gWriteFailed ? ", A WRITE FAILED" : "");
@@ -226,9 +267,15 @@ static int runModeset(Io io) {
     printf("  3 s after: frames +%u, OTG_MASTER_EN %u, VTG0_ENABLE %u, timing %s, underflow %u (was %u), DIG_FIFO_ERROR %u, DIG_ENABLE %u\n",
            (f1 - f0) & 0xFFFFFF, master, vtg, phxtiming::otgDiff(phxtiming::otgRegs(m60), after) ? "CHANGED" : "the 60 Hz mode", uf, uf0,
            fifoErr, fieldGet(rd(nullptr, kDigBeEnable.addr), kDigBeEnable));
+    const unsigned modeNow = fieldGet(rd(nullptr, kDigBeMode.addr), kDigBeMode);
+    // HDMI: the DIG in HDMI mode, the AVI InfoFrame sent every frame. SCDC is reported, not required: a sink without
+    // SCDC NACKs it, and Linux ignores that (link_query_ddc_data's result is not checked).
+    const bool hdmiOk = to != kDigModeHdmi || (modeNow == kDigModeHdmi && fieldGet(rd(nullptr, kHdmiGen0Send.addr), kHdmiGen0Send) == 1 && c.vpgIdle);
     const bool pass = c.dmub == phxdmubinbox::Status::Ok && r.otg.busyCleared && r.otg.inClkOn && r.otg.otgClkOn && r.timingOk &&
-                      r.frontEnd == Result::Ok && !gWriteFailed && ((f1 - f0) & 0xFFFFFF) > 170 && master && vtg && !fifoErr && uf == uf0;
-    printf("RESULT: %s\n", pass ? "PASS (Linux's mode set brought the pipe down and up again at 60 Hz)"
+                      r.frontEnd == Result::Ok && !gWriteFailed && ((f1 - f0) & 0xFFFFFF) > 170 && master && vtg && !fifoErr && uf == uf0 &&
+                      modeNow == to && hdmiOk;
+    printf("RESULT: %s\n", pass ? (to == kDigModeHdmi ? "PASS (Linux's mode set brought the pipe up as HDMI at 60 Hz)"
+                                                       : "PASS (Linux's mode set brought the pipe down and up again at 60 Hz as DVI)")
                                 : "CHECK (see above; if the picture did not come back, restart)");
     return 0;
 }
@@ -237,10 +284,14 @@ int main(int argc, char **argv) {
     const bool doBlank = argc > 1 && !strcmp(argv[1], "--blank");
     const bool doDpms = argc > 1 && !strcmp(argv[1], "--dpms");
     const bool doModeset = argc > 1 && !strcmp(argv[1], "--modeset");
-    if (argc > 1 && !doBlank && !doDpms && !doModeset) { fprintf(stderr, "usage: testl5 [--blank | --dpms | --modeset]\n"); return 2; }
+    const bool doHdmi = argc > 1 && !strcmp(argv[1], "--hdmi"), doDvi = argc > 1 && !strcmp(argv[1], "--dvi");
+    if (argc > 1 && !doBlank && !doDpms && !doModeset && !doHdmi && !doDvi) {
+        fprintf(stderr, "usage: testl5 [--blank | --dpms | --modeset | --hdmi | --dvi]\n");
+        return 2;
+    }
     if (open_kext()) return 1;
     if (doDpms) return runDpms(Io{rd, wr, delayUs, nullptr});
-    if (doModeset) return runModeset(Io{rd, wr, delayUs, nullptr});
+    if (doModeset || doHdmi || doDvi) return runModeset(Io{rd, wr, delayUs, nullptr}, doHdmi ? kDigModeHdmi : doDvi ? kDigModeDvi : 0);
     Io io{rd, wr, delayUs, nullptr};
 
     const unsigned opp = fieldGet(rd(nullptr, kOdmSeg0Src.addr), kOdmSeg0Src);

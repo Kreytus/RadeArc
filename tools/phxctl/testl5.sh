@@ -5,6 +5,8 @@
 #   bash testl5.sh --dpms    5b: Linux's DPMS off / on for the DVI link (the monitor loses the signal for 3 s);
 #                            needs the driver's DMCUB: `bash testj.sh run` first in the same boot
 #   bash testl5.sh --modeset 5c: Linux's whole mode set at the same 60 Hz (link, OTG, front end); also needs testj.sh run
+#   bash testl5.sh --hdmi    5d: the same mode set, but the link comes up as HDMI (AVI InfoFrame, SCDC); testj.sh run first
+#   bash testl5.sh --dvi     5d: back to DVI the same way (GOP's signal); a restart also brings DVI back
 # Needs boot-args -phxp2 phxdebug=1. Output: ~/Desktop/testl5.txt
 D=$(cd "$(dirname "$0")" && pwd)
 P=$D/gpu/phxctl

@@ -32,12 +32,17 @@ inline unsigned frameWaitUs(const phxtiming::Mode &m) {
     return pix100hz ? m.vTotal * (m.hTotal * 10000u / pix100hz) : 0;
 }
 
-inline ModesetResult modeset(DpmsCtx &c, const phxtiming::Mode &m, const PhxDmlVal *plan) {
+// c.signal / c.pixKhz describe the stream that is up now and comes down; `to` / m.pixelKhz the one that comes up (for
+// HDMI, c.avi holds its AVI InfoFrame and c.scdc the DDC for SCDC)
+inline ModesetResult modeset(DpmsCtx &c, const phxtiming::Mode &m, const PhxDmlVal *plan, phxdmubcmd::Signal to) {
     ModesetResult r;
     const Io &io = c.io;
-    // down
+    // down, as the old stream
     dpmsOff(c);
     otgDown(io, r.otg);
+    // up, as the new stream
+    c.signal = to;
+    c.pixKhz = m.pixelKhz;
     // up: dcn20_enable_stream_timing
     enableOptcClock(io, true, r.otg);
     programPixClk(c);

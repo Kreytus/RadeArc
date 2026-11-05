@@ -626,3 +626,12 @@ Expected in `~/Desktop/testl5.txt`:
 - `RESULT: PASS`
 
 If the picture doesn't come back, restart.
+
+**Test L step 5c, passed on the first run** (package 0869321, `hardware/dumps/b650m_8500g/testl5c.txt`):
+- Linux's whole mode set ran on the 8500G's live pipe at the same 60 Hz DVI mode. All five DMUB commands answered.
+- `OTG_BUSY` cleared after the OTG stopped, and the OPTC and OTG clocks reported on when restarted.
+- Timing, front end and FIFO handshake all fine.
+- 3 s later: 180 frames, the OTG and VTG enabled, the timing exactly EDID mode 0, underflow 0, `DIG_FIFO_ERROR` 0,
+  the DIG enabled, and the picture back.
+- So everything the 144 Hz switch does is proven on hardware. The remaining differences are the values: the 144 Hz
+  timing, pixel clock and DML plan; HDMI instead of DVI (5d); the clocks raised first (step 3).

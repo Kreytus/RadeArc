@@ -1,0 +1,9 @@
+== 2026-11-05 20:15:42 testl5 --modeset (RadeArc package 0869321e55c625bdcfe1ac5265ecd6af771a4633)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== 5c preconditions: DMCUB driver firmware, inbox 1 OK; OTG0 timing = EDID mode 0 (60 Hz); DLG refclk 24000 kHz; DIG BE0 mode 2 enable 1; VPG0 0
+== mode set (60 Hz DVI, Linux's order): DMUB OK; OTG_BUSY cleared yes, OPTC clock on yes, OTG clock on yes; timing ok; front end ok; FIFO reset timeouts 0
+  3 s after: frames +180, OTG_MASTER_EN 1, VTG0_ENABLE 1, timing the 60 Hz mode, underflow 0 (was 0), DIG_FIFO_ERROR 0, DIG_ENABLE 1
+RESULT: PASS (Linux's mode set brought the pipe down and up again at 60 Hz)
+testl5 exit 0

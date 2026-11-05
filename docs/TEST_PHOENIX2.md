@@ -517,3 +517,13 @@ Expected in `~/Desktop/testl5.txt`:
 - about 180 frames while blank, underflow 0
 - `blanked no` after the unblank
 - `RESULT: PASS`
+
+**Test L step 5a, passed** (package 3324355, `hardware/dumps/b650m_8500g/testl5a.txt`):
+- OTG0 is fed by OPP0.
+- GOP leaves OPP0's DPG off: `DPG_CONTROL` 0x30, which is `DPG_EN` 0 with a stale `DPG_MODE` 3, and
+  `DPG_DIMENSIONS` already 1920×1080.
+- Blank: `DPG_CONTROL` 0x41 (EN 1, mode 4, black). The picture went black for 3 s while the OTG ran on: 180 frames,
+  underflow 0.
+- Unblank: video mode (`DPG_CONTROL` 0, as Linux writes it). The tool then put GOP's 0x30 back; with `DPG_EN` 0 the
+  mode bits do nothing.
+- So the blank Linux uses around its HDMI mode set works on the 8500G.

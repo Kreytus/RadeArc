@@ -1,0 +1,18 @@
+== 2026-11-05 19:40:59 testl5 --blank (RadeArc package 332435544c552a11653c5bf97a88b2f808b73689)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== OTG0 is fed by OPP0 (OPTC_SEG0_SRC_SEL), frames +6 in 100 ms; OPP0 DPG:
+  DPG_CONTROL          [0x04d14] 0x00000030
+  DPG_DIMENSIONS       [0x04d16] 0x07800438
+  DPG_OFFSET_SEGMENT   [0x04d1a] 0x00000000
+  DPG_COLOUR_B_CB      [0x04d19] 0x00000000
+  DPG_COLOUR_G_Y       [0x04d18] 0x00000000
+  DPG_COLOUR_R_CR      [0x04d17] 0x00000000
+  DPG_RAMP_CONTROL     [0x04d15] 0x00000000
+  blanked now: no
+== 5a blank (dcn20_blank_pixel_data true): DPG_CONTROL 0x00000041, blanked yes
+  DPG_CONTROL          0x00000000, saved 0x00000030: writing the saved word back
+== unblank (dcn20_blank_pixel_data false): blanked no; 180 frames while blank, underflow 0; 1 DPG registers differed from GOP's
+RESULT: PASS (Linux's HDMI blank / unblank works; the screen was black for 3 s)
+testl5 exit 0

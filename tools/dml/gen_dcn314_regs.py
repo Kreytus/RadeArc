@@ -17,8 +17,9 @@ import os, re, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 SRC = os.path.join(ROOT, "build", "linux-src")
 OUT = os.path.join(ROOT, "src", "amd", "phx_dcn314_prog_regs.h")
-# DMU 3.1.4 segment bases on the 8500G (IP discovery; the same bases modecheck/clkinfo use)
-SEG = {0: 0x12, 1: 0xC0, 2: 0x34C0}
+# DMU 3.1.4 segment bases on the 8500G: IP discovery, hardware/dumps/b650m_8500g/ip_discovery.txt ("DMU inst 0 v3.1.4
+# bases 0x12 0xC0 0x34C0 0x9000 0x2403C00"), the same bases modecheck/clkinfo use. Segment 3 holds the MPC output mux.
+SEG = {0: 0x12, 1: 0xC0, 2: 0x34C0, 3: 0x9000, 4: 0x2403C00}
 
 # (Linux function, register, kind, [(FIELD, DML source)])
 #   kind SET    = REG_SET_n: the register is written whole, fields not named are 0
@@ -190,6 +191,45 @@ NAMED_FULL = [
     # no PHYPLLA_PIXCLK_DOUBLE_RATE_ENABLE), the pixel-clock half of apply_symclk_on_tx_off_wa
     ("OTG0_PIXEL_RATE_CNTL", "PIPE0_DTO_SRC_SEL", "kPipe0DtoSrcSel", "dcn31_program_pix_clk"),
     ("PHYPLLA_PIXCLK_RESYNC_CNTL", "PHYPLLA_DCCG_DEEP_COLOR_CNTL", "kPhyPllADeepColor", "dce112_program_pixel_clk_resync"),
+    # Test L 5c, the OTG stop / restart (phx_dcn314_otg.h): optc314_disable_crtc / enable_crtc, optc1_enable_optc_clock,
+    # optc1_is_optc_underflow_occurred / clear, optc314_set_odm_bypass, optc31_set_drr, optc1_set_vtotal_min_max,
+    # optc1_program_timing's remaining fields, optc1_set_static_screen_control, mpc3_set_out_rate_control (MUX[0]),
+    # opp1_pipe_clock_control, opp2_program_left_edge_extra_pixel, dccg314_trigger_dio_fifo_resync
+    ("OTG0_OTG_CONTROL", "OTG_MASTER_EN", "kOtgMasterEn", "optc314_enable_crtc / disable_crtc"),
+    ("OTG0_OTG_CONTROL", "OTG_DISABLE_POINT_CNTL", "kOtgDisablePoint", "optc314_enable_crtc"),
+    ("OTG0_OTG_CONTROL", "OTG_START_POINT_CNTL", "kOtgStartPoint", "optc1_program_timing"),
+    ("OTG0_OTG_CONTROL", "OTG_FIELD_NUMBER_CNTL", "kOtgFieldNumber", "optc1_program_timing"),
+    ("VTG0_CONTROL", "VTG0_ENABLE", "kVtgEnable", "optc314_enable_crtc / disable_crtc, optc1_program_timing"),
+    ("OTG0_OTG_CLOCK_CONTROL", "OTG_BUSY", "kOtgBusy", "optc314_disable_crtc"),
+    ("OTG0_OTG_CLOCK_CONTROL", "OTG_CLOCK_EN", "kOtgClockEn", "optc1_enable_optc_clock"),
+    ("OTG0_OTG_CLOCK_CONTROL", "OTG_CLOCK_GATE_DIS", "kOtgClockGateDis", "optc1_enable_optc_clock"),
+    ("OTG0_OTG_CLOCK_CONTROL", "OTG_CLOCK_ON", "kOtgClockOn", "optc1_enable_optc_clock"),
+    ("ODM0_OPTC_INPUT_CLOCK_CONTROL", "OPTC_INPUT_CLK_EN", "kOptcInClkEn", "optc1_enable_optc_clock"),
+    ("ODM0_OPTC_INPUT_CLOCK_CONTROL", "OPTC_INPUT_CLK_GATE_DIS", "kOptcInClkGateDis", "optc1_enable_optc_clock"),
+    ("ODM0_OPTC_INPUT_CLOCK_CONTROL", "OPTC_INPUT_CLK_ON", "kOptcInClkOn", "optc1_enable_optc_clock"),
+    ("ODM0_OPTC_INPUT_GLOBAL_CONTROL", "OPTC_UNDERFLOW_OCCURRED_STATUS", "kOptcUnderflow", "optc1_is_optc_underflow_occurred"),
+    ("ODM0_OPTC_INPUT_GLOBAL_CONTROL", "OPTC_UNDERFLOW_CLEAR", "kOptcUnderflowClear", "optc1_clear_optc_underflow"),
+    ("ODM0_OPTC_DATA_SOURCE_SELECT", "OPTC_NUM_OF_INPUT_SEGMENT", "kOdmNumSegments", "optc314_set_odm_bypass"),
+    ("ODM0_OPTC_DATA_SOURCE_SELECT", "OPTC_SEG1_SRC_SEL", "kOdmSeg1Src", "optc314_set_odm_bypass"),
+    ("ODM0_OPTC_DATA_SOURCE_SELECT", "OPTC_SEG2_SRC_SEL", "kOdmSeg2Src", "optc314_set_odm_bypass"),
+    ("ODM0_OPTC_DATA_SOURCE_SELECT", "OPTC_SEG3_SRC_SEL", "kOdmSeg3Src", "optc314_set_odm_bypass"),
+    ("ODM0_OPTC_DATA_FORMAT_CONTROL", "OPTC_DATA_FORMAT", "kOptcDataFormat", "optc1_program_timing"),
+    ("OTG0_OTG_H_TIMING_CNTL", "OTG_H_TIMING_DIV_MODE", "kOtgHDivMode", "optc314_set_odm_bypass, optc1_program_timing"),
+    ("ODM0_OPTC_MEMORY_CONFIG", "OPTC_MEM_SEL", "kOptcMemSel", "optc314_set_odm_bypass"),
+    ("OTG0_OTG_V_TOTAL_MAX", "OTG_V_TOTAL_MAX", "kOtgVTotalMax", "optc1_set_vtotal_min_max"),
+    ("OTG0_OTG_V_TOTAL_MIN", "OTG_V_TOTAL_MIN", "kOtgVTotalMin", "optc1_set_vtotal_min_max"),
+    ("OTG0_OTG_V_TOTAL_CONTROL", "OTG_SET_V_TOTAL_MIN_MASK", "kOtgVtMinMask", "optc31_set_drr"),
+    ("OTG0_OTG_V_TOTAL_CONTROL", "OTG_V_TOTAL_MIN_SEL", "kOtgVtMinSel", "optc31_set_drr"),
+    ("OTG0_OTG_V_TOTAL_CONTROL", "OTG_V_TOTAL_MAX_SEL", "kOtgVtMaxSel", "optc31_set_drr"),
+    ("OTG0_OTG_V_TOTAL_CONTROL", "OTG_FORCE_LOCK_ON_EVENT", "kOtgForceLock", "optc31_set_drr"),
+    ("OTG0_OTG_INTERLACE_CONTROL", "OTG_INTERLACE_ENABLE", "kOtgInterlace", "optc1_program_timing"),
+    ("OTG0_OTG_STATIC_SCREEN_CONTROL", "OTG_STATIC_SCREEN_EVENT_MASK", "kOtgStaticMask", "optc1_set_static_screen_control"),
+    ("OTG0_OTG_STATIC_SCREEN_CONTROL", "OTG_STATIC_SCREEN_FRAME_COUNT", "kOtgStaticFrames", "optc1_set_static_screen_control"),
+    ("MPC_OUT0_MUX", "MPC_OUT_RATE_CONTROL_DISABLE", "kMpcRateCtlDis", "mpc3_set_out_rate_control"),
+    ("MPC_OUT0_MUX", "MPC_OUT_RATE_CONTROL", "kMpcRateCtl", "mpc3_set_out_rate_control"),
+    ("OPP_PIPE0_OPP_PIPE_CONTROL", "OPP_PIPE_CLOCK_EN", "kOppPipeClockEn", "opp1_pipe_clock_control"),
+    ("FMT0_FMT_422_CONTROL", "FMT_LEFT_EDGE_EXTRA_PIXEL_COUNT", "kFmtLeftEdge", "opp2_program_left_edge_extra_pixel"),
+    ("DENTIST_DISPCLK_CNTL", "DENTIST_DISPCLK_WDIVIDER", "kDentistDispWdiv", "dccg314_trigger_dio_fifo_resync"),
     # DMCUB inbox 1 (dmub_dcn31.c: is_hw_init, setup_mailbox, get_inbox1_rptr, set_inbox1_wptr) and the CW4 window
     # that backs it (dmub_dcn31_setup_windows), for phx_dmub_inbox.h
     ("DMCUB_CNTL", "DMCUB_ENABLE", "kDmcubEnable", "dmub_dcn31_is_hw_init"),

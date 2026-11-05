@@ -586,3 +586,43 @@ If the picture doesn't come back, restart: GOP lights the link at every boot.
   `testl5` counted that as a failure and printed CHECK; it now checks that bit against Linux's value instead.
 - So Linux's link down / up path, the DMUB transmitter and encoder commands, and the encoder FIFO handshake all work
   on the 8500G, with the TMDS SYMCLK workaround. That workaround becomes part of every TMDS link-off in the mode set.
+
+## Test L, step 5c: Linux's whole mode set, at the same 60 Hz
+
+After `bash testj.sh run` in the same boot:
+```bash
+cd ~/Desktop/radearc-package && bash testl5.sh --modeset
+```
+
+`phx_dcn314_modeset.h` puts the proven pieces together in `dc_commit_streams`' order:
+1. **Link down:** `link_set_dpms_off`, 5b, with the SYMCLK workaround.
+2. **OTG down** (`dcn20_reset_back_end_for_pipe`):
+   - `optc314_disable_crtc`, waiting for `OTG_BUSY` to clear
+   - the OTG / OPTC clocks off (an OTG underflow is cleared first)
+   - ODM bypass, DRR off
+3. **OTG up** (`dcn20_enable_stream_timing`):
+   - clocks on (waiting for `OPTC_INPUT_CLK_ON` / `OTG_CLOCK_ON`), `program_pix_clk`
+   - `optc1_program_timing`: Test K's 60 Hz values, Linux's global sync and VTG parameters
+   - MPC rate control, OPP pipe clock, blank
+   - `optc314_enable_crtc`, one frame, DRR, static-screen control
+4. **Link up:** connect DIG FE 0 to OTG0, `link_set_dpms_on` (5b).
+5. **FIFO re-sync:** `dcn314_resync_fifo_dccg_dio` (`DENTIST_DISPCLK_WDIVIDER` ← `RDIVIDER`).
+6. **Front end:** step 2's Linux 60 Hz HUBP values under the OTG lock, then unblank.
+
+The pipe stays on Linux's 60 Hz values afterwards (step 2 proved them). **The monitor loses the signal for a moment, as
+at any mode change, then shows the picture again.**
+
+It refuses unless:
+- DMCUB runs the driver's firmware
+- OTG0 shows exactly EDID mode 0
+- the DLG refclk is 24 MHz
+- DIG BE 0 is in DVI mode and enabled
+- VPG0's memory is on
+
+Expected in `~/Desktop/testl5.txt`:
+- `DMUB OK; OTG_BUSY cleared yes, OPTC clock on yes, OTG clock on yes; timing ok; front end ok`
+- 3 s after: about 180 frames, `OTG_MASTER_EN 1`, `VTG0_ENABLE 1`, `timing the 60 Hz mode`, underflow unchanged,
+  `DIG_FIFO_ERROR 0`, `DIG_ENABLE 1`
+- `RESULT: PASS`
+
+If the picture doesn't come back, restart.

@@ -10,13 +10,17 @@
  *                     transmitter enable at the same 148.5 MHz. The OTG keeps running. Needs the driver's DMCUB
  *                     (`testj.sh run` in this boot).
  *
+ *   testl5 --modeset  5c: Linux's whole mode set for the live pipe, at the same 60 Hz DVI mode (phx_dcn314_modeset.h):
+ *                     link down, OTG down, OTG up with the 60 Hz timing, link up, front end with Linux's 60 Hz values,
+ *                     unblank. The pipe stays on Linux's values (step 2 proved them). Needs `testj.sh run` too.
+ *
  * --blank: the screen goes black for 3 s. --dpms: the monitor loses the signal for 3 s and syncs again.
+ * --modeset: the monitor loses the signal for a moment, as at any mode change.
  * PhxBringup debug selectors (-phxp2, phxdebug=1, root).
  *
  * build: clang++ -std=c++17 -O2 -I../../src/amd -o testl5 testl5.cpp -framework IOKit -framework CoreFoundation
  */
-#include "phx_dcn314_blank.h"
-#include "phx_dcn314_dpms.h"
+#include "phx_dcn314_modeset.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
@@ -180,12 +184,63 @@ static const uint32_t kDpgRegs[7] = {kDpgEn.addr, kDpgWidth.addr, kDpgXOffset.ad
 static const char *const kDpgNames[7] = {"DPG_CONTROL", "DPG_DIMENSIONS", "DPG_OFFSET_SEGMENT", "DPG_COLOUR_B_CB",
                                          "DPG_COLOUR_G_Y", "DPG_COLOUR_R_CR", "DPG_RAMP_CONTROL"};
 
+static int runModeset(Io io) {
+    phxdmubinbox::Io dio{rd, wr, vrd, vwr, delayUs, nullptr};
+    phxdmubinbox::Inbox ib;
+    const uint64_t mcBase = prop64("phx-fb-mc-base");
+    const bool rdy = phxdmubinbox::ready(dio);
+    const phxdmubinbox::Status loc = mcBase ? phxdmubinbox::locate(dio, mcBase, 256ull << 20, &ib) : phxdmubinbox::Status::BadWindow;
+    const phxtiming::Mode m60 = {148500, 1920, 88, 44, 2200, 1080, 4, 5, 1125, true, true};   // EDID mode 0 (Test K)
+    auto rd0 = [](uint32_t r) { return rd(nullptr, r); };
+    const phxtiming::OtgRegs live = phxtiming::readOtg(rd0, 0);
+    const bool sameTiming = !phxtiming::otgDiff(phxtiming::otgRegs(m60), live);
+    uint32_t timer = 0;
+    for (unsigned i = 0; i < kNumExtraFields; i++)
+        if (!strcmp(kExtraFields[i].reg, "DCHUBBUB_GLOBAL_TIMER_CNTL")) timer = rd(nullptr, kExtraFields[i].addr);
+    const uint32_t be = rd(nullptr, kDigBeMode.addr);
+    const unsigned digMode = fieldGet(be, kDigBeMode), digEn = fieldGet(rd(nullptr, kDigBeEnable.addr), kDigBeEnable);
+    const unsigned vpgPwr = fieldGet(rd(nullptr, kVpgMemPwrState.addr), kVpgMemPwrState);
+    printf("== 5c preconditions: DMCUB %s, inbox 1 %s; OTG0 timing %s; DLG refclk %u kHz; DIG BE0 mode %u enable %u; VPG0 %u\n",
+           rdy ? "driver firmware" : "NOT the driver's", phxdmubinbox::name(loc), sameTiming ? "= EDID mode 0 (60 Hz)" : "NOT the 60 Hz mode",
+           dchubRefKhz(timer), digMode, digEn, vpgPwr);
+    if (!rdy || loc != phxdmubinbox::Status::Ok || !sameTiming || dchubRefKhz(timer) != 24000 || digMode != kDigModeDvi || !digEn || vpgPwr) {
+        fprintf(stderr, "testl5: not the state 5c is written for (run testj.sh run first?): nothing written\n");
+        return 3;
+    }
+    const unsigned uf0 = fieldGet(rd(nullptr, kHubpUnderflow.addr), kHubpUnderflow);
+    signal(SIGINT, SIG_IGN);
+    DpmsCtx c{io, dio, &ib, phxdmubcmd::Signal::Dvi, m60.pixelKhz};
+    const ModesetResult r = modeset(c, m60, kDml60);
+    printf("== mode set (60 Hz DVI, Linux's order): DMUB %s; OTG_BUSY cleared %s, OPTC clock on %s, OTG clock on %s%s;"
+           " timing %s; front end %s; FIFO reset timeouts %u%s\n", phxdmubinbox::name(c.dmub), r.otg.busyCleared ? "yes" : "NO",
+           r.otg.inClkOn ? "yes" : "NO", r.otg.otgClkOn ? "yes" : "NO", r.otg.underflowCleared ? " (an OTG underflow was cleared)" : "",
+           r.timingOk ? "ok" : "BAD", r.frontEnd == Result::Ok ? "ok" : "NOT ok", c.fifoResetTimeouts, gWriteFailed ? ", A WRITE FAILED" : "");
+    fflush(stdout);
+    const uint32_t f0 = frames();
+    sleep(3);
+    const uint32_t f1 = frames();
+    const phxtiming::OtgRegs after = phxtiming::readOtg(rd0, 0);
+    const unsigned uf = fieldGet(rd(nullptr, kHubpUnderflow.addr), kHubpUnderflow);
+    const unsigned fifoErr = fieldGet(rd(nullptr, kDigFifoError.addr), kDigFifoError);
+    const unsigned master = fieldGet(rd(nullptr, kOtgMasterEn.addr), kOtgMasterEn), vtg = fieldGet(rd(nullptr, kVtgEnable.addr), kVtgEnable);
+    printf("  3 s after: frames +%u, OTG_MASTER_EN %u, VTG0_ENABLE %u, timing %s, underflow %u (was %u), DIG_FIFO_ERROR %u, DIG_ENABLE %u\n",
+           (f1 - f0) & 0xFFFFFF, master, vtg, phxtiming::otgDiff(phxtiming::otgRegs(m60), after) ? "CHANGED" : "the 60 Hz mode", uf, uf0,
+           fifoErr, fieldGet(rd(nullptr, kDigBeEnable.addr), kDigBeEnable));
+    const bool pass = c.dmub == phxdmubinbox::Status::Ok && r.otg.busyCleared && r.otg.inClkOn && r.otg.otgClkOn && r.timingOk &&
+                      r.frontEnd == Result::Ok && !gWriteFailed && ((f1 - f0) & 0xFFFFFF) > 170 && master && vtg && !fifoErr && uf == uf0;
+    printf("RESULT: %s\n", pass ? "PASS (Linux's mode set brought the pipe down and up again at 60 Hz)"
+                                : "CHECK (see above; if the picture did not come back, restart)");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const bool doBlank = argc > 1 && !strcmp(argv[1], "--blank");
     const bool doDpms = argc > 1 && !strcmp(argv[1], "--dpms");
-    if (argc > 1 && !doBlank && !doDpms) { fprintf(stderr, "usage: testl5 [--blank | --dpms]\n"); return 2; }
+    const bool doModeset = argc > 1 && !strcmp(argv[1], "--modeset");
+    if (argc > 1 && !doBlank && !doDpms && !doModeset) { fprintf(stderr, "usage: testl5 [--blank | --dpms | --modeset]\n"); return 2; }
     if (open_kext()) return 1;
     if (doDpms) return runDpms(Io{rd, wr, delayUs, nullptr});
+    if (doModeset) return runModeset(Io{rd, wr, delayUs, nullptr});
     Io io{rd, wr, delayUs, nullptr};
 
     const unsigned opp = fieldGet(rd(nullptr, kOdmSeg0Src.addr), kOdmSeg0Src);

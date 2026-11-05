@@ -408,3 +408,35 @@ off through the kill switch, so the panel showed GOP's framebuffer):
 - The restore put all 45 registers back exactly (0 differ).
 - So the write path, Linux's lock / global-sync / VTG / HUBP order and DML's per-mode values all work on the 8500G.
   The 144 Hz switch writes the same registers with the 144 Hz plan, plus the clocks, the PLL, the PHY and the timing.
+
+## Test L, step 3: the 144 Hz display clocks at 60 Hz (SMU messages, comes back down)
+
+From the newest install package; same boot-args as step 2. Dry run, then the real one:
+```bash
+cd ~/Desktop/radearc-package && bash testl3.sh
+```
+```bash
+cd ~/Desktop/radearc-package && bash testl3.sh --apply
+```
+
+What it does (`src/amd/phx_dcn314_clk.h`), the way Linux v6.17's `dcn314_update_clocks` raises clocks before a mode
+switch:
+1. `VBIOSSMC_MSG_SetDispclkFreq` 343 MHz: DML's 342.857 MHz for 144 Hz, rounded up by `khz_to_mhz_ceil`.
+2. `VBIOSSMC_MSG_SetDppclkFreq` 338 MHz.
+3. `dccg31_update_dpp_dto` for pipe 0: phase 255 / modulo 255 (the pipe at the full DPPCLK), enabled.
+
+It watches for 15 s (frames, underflow, the DISPCLK the DENTIST divider reports), then comes down the way Linux lowers:
+1. DISPCLK back to GOP's (from `DENTIST_DISPCLK_RDIVIDER`).
+2. The DTO registers as saved.
+3. DPPCLK to Linux's 60 Hz value. GOP's DPPCLK can't be read on DCN 3.1.4.
+
+It refuses to run unless the pipe is the 60 Hz one and the SMU mailbox is idle.
+
+Expected in `~/Desktop/testl3.txt`:
+- `up: SetDispclkFreq OK (343 MHz), SetDppclkFreq OK (338 MHz)` and `DISPCLK now` ≥ 342857 kHz
+  (342857 = 2400 MHz / 7)
+- every 2 s: about 120 frames and `underflow status 0`
+- `down: … OK …, DTO as saved; DISPCLK now ~165517 kHz`
+- `RESULT: PASS`
+
+The picture doesn't change; the panel stays at 60 Hz.

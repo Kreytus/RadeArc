@@ -98,6 +98,8 @@ jobs:
         cp tools/phxctl/testl.sh "$P/"
         cp "$K"/phxctl/testl2 "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no testl2 in the kext build yet"
         cp tools/phxctl/testl2.sh "$P/"
+        cp "$K"/phxctl/testl3 "$P/gpu/phxctl/" 2>/dev/null || echo "::warning::no testl3 in the kext build yet"
+        cp tools/phxctl/testl3.sh "$P/"
         cp tools/phxctl/bocheck.sh "$P/"
         cp tools/phxctl/update.sh "$P/"
         mkdir -p "$P/gpu/fw" && cp hardware/dumps/b650m_8500g/vbios.rom "$P/gpu/fw/vbios_b650m_8500g.rom"

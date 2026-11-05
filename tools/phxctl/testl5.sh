@@ -1,0 +1,18 @@
+#!/bin/bash
+# testl5.sh: Phase 3b Test L step 5 (docs/TEST_PHOENIX2.md). Runs from the unpacked install package.
+#   bash testl5.sh           read-only: which OPP feeds OTG0, the DPG state
+#   bash testl5.sh --blank   (--blank) 5a: blank the picture for 3 s the Linux way, unblank
+# Needs boot-args -phxp2 phxdebug=1. Output: ~/Desktop/testl5.txt
+D=$(cd "$(dirname "$0")" && pwd)
+P=$D/gpu/phxctl
+OUT=$HOME/Desktop/testl5.txt
+xattr -dr com.apple.quarantine "$D/gpu" 2>/dev/null
+chmod +x "$P"/* 2>/dev/null
+{
+    echo "== $(date '+%F %T') testl5 $* ($(head -1 "$D/RADEARC_BUILD.txt" 2>/dev/null))"
+    ioreg -rc PhxBringup | grep -E '"phx-(build|chip)"'
+    sysctl -n kern.bootargs
+    sudo "$P/testl5" "$@"
+    echo "testl5 exit $?"
+} 2>&1 | tee "$OUT"
+echo "done: $OUT"

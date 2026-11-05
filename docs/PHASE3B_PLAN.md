@@ -345,3 +345,32 @@ EDID on DDC1) agrees with the VBIOS. No hardware dump needed for this step.
 - Whether the DCCG pixel clock source for OTG0/PHY A needs programming outside the DMUB command (4b).
 - The GOP surface pitch field (1023) seen in Phase 0. It stays as GOP set it, since the resolution does not change.
   It is recorded for completeness.
+
+## 4g. Test L step 5: Linux's mode set, in reversible pieces (2026-11-05)
+
+A refresh change is a full mode set in Linux: `dc_commit_streams` takes the old stream down and brings the new one
+up. For the 8500G's single HDMI pipe (Linux v6.17):
+- **Down** (`link_set_dpms_off`): AV mute (HDMI), `disable_audio_stream`, `blank_stream` (nothing for HDMI / DVI),
+  SCDC back to legacy (`write_scdc_data` at 165 MHz), `dce110_disable_stream`, `disable_link` → link encoder
+  `disable_output` → DMUB transmitter disable. Then the back end is reset (OTG disabled).
+- **Up** (`dce110_apply_single_controller_ctx_to_hw`):
+  - `opp_program_fmt` / `opp_set_dyn_expansion` (8 bpc RGB, as GOP)
+  - `dcn20_enable_stream_timing`: `set_pixel_rate_div`, `enable_optc_clock`, `program_pix_clk` (DMUB
+    SET_PIXEL_CLOCK), `program_timing` (with the DML global sync), MPC `set_out_rate_control`,
+    `opp_pipe_clock_control`, `blank_pixel_data(true)`, `enable_crtc`, a one-frame wait, `set_static_screen_control`
+  - `dig_connect_to_otg`
+  - `link_set_dpms_on`: link encoder `setup` (DIG_BE mode), `set_out_mux`, `setup_stream_attribute`
+    (`enc314_stream_encoder_hdmi_set_stream_attribute`, which also sends the DMUB STREAM_SETUP), VPG on, the AVI
+    infoframe (`update_info_frame`), `enable_link_hdmi` (SCDC `TMDS_CONFIG` 0 below 340 MHz, `setup_stream_encoder`,
+    `enable_tmds_link_output` → DMUB transmitter enable), `enable_stream`
+  - then the front end (step 2's HUBP / DLG registers with the 144 Hz plan) and `blank_pixel_data(false)` once the
+    plane is visible
+- Clocks go up first (step 3, `prepare_bandwidth`) and DET / watermarks follow Linux's prepare / optimize bandwidth.
+
+Each piece is proven on the running 60 Hz picture first, reversibly, with `testl5`:
+- **5a, blank / unblank** (`dcn20_blank_pixel_data`: OPP0's DPG; `blank_stream` doesn't act on HDMI / DVI)
+- **5b, the link off and on at 60 Hz DVI** through DMUB: transmitter disable, SET_PIXEL_CLOCK 148.5 MHz,
+  transmitter enable. The monitor resyncs once.
+- **5c, the OTG off and on at 60 Hz** (`enable_stream_timing` with the 60 Hz timing)
+- **5d, HDMI mode at 60 Hz** (stream encoder attributes, AVI infoframe, DIG_MODE 3)
+- **5e, 144 Hz** (all of the above with the 144 Hz values), held 15 s, then back to GOP's 60 Hz DVI

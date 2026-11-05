@@ -497,3 +497,23 @@ in the same boot):
   01aed82.
 - `DMUB_CMD__NULL` went through Linux's queue / read-back / WPTR / wait-for-RPTR path: WPTR 64 → 128, RPTR 128.
 - So the command path for `DMUB_CMD__VBIOS` (PLL, encoder setup, transmitter) works from macOS.
+
+## Test L, step 5a: blank and unblank the picture the Linux way
+
+```bash
+cd ~/Desktop/radearc-package && bash testl5.sh
+```
+```bash
+cd ~/Desktop/radearc-package && bash testl5.sh --blank
+```
+
+The read-only run shows which OPP feeds OTG0 (expected OPP0) and the display pattern generator's registers. `--blank`
+blanks the picture as Linux blanks an HDMI or DVI stream, through `dcn20_blank_pixel_data`: OPP0's DPG set to a black
+solid colour (`phx_dcn314_blank.h`). It holds for 3 s, unblanks (DPG back to video mode) and writes any DPG register
+that differs from GOP's value back. **The screen goes black for 3 s, then the picture returns.**
+
+Expected in `~/Desktop/testl5.txt`:
+- `blanked yes`
+- about 180 frames while blank, underflow 0
+- `blanked no` after the unblank
+- `RESULT: PASS`

@@ -135,6 +135,22 @@ NAMED = [
     ("CONTROL", "VTG0_VCOUNT_INIT", "kVtgVcountInit", "optc1_set_vtg_params"),
     ("DCHUBP_CNTL", "HUBP_VTG_SEL", "kHubpVtgSel", "hubp2_vtg_sel (dcn20_update_dchubp_dpp)"),
     ("DCHUBP_CNTL", "HUBP_UNDERFLOW_STATUS", "kHubpUnderflow", "hubp2_read_state_common"),
+    # which OPP feeds OTG0 (optc314 ODM source select), and OPP0's display pattern generator that
+    # dcn20_blank_pixel_data -> opp2_set_disp_pattern_generator / opp2_dpg_set_blank_color drive (dcn20_opp.c)
+    ("OPTC_DATA_SOURCE_SELECT", "OPTC_SEG0_SRC_SEL", "kOdmSeg0Src", "optc314 set_odm_bypass / combine"),
+    ("DPG_CONTROL", "DPG_EN", "kDpgEn", "opp2_set_disp_pattern_generator"),
+    ("DPG_CONTROL", "DPG_MODE", "kDpgMode", "opp2_set_disp_pattern_generator"),
+    ("DPG_DIMENSIONS", "DPG_ACTIVE_WIDTH", "kDpgWidth", "opp2_set_disp_pattern_generator"),
+    ("DPG_DIMENSIONS", "DPG_ACTIVE_HEIGHT", "kDpgHeight", "opp2_set_disp_pattern_generator"),
+    ("DPG_OFFSET_SEGMENT", "DPG_X_OFFSET", "kDpgXOffset", "opp2_set_disp_pattern_generator"),
+    ("DPG_OFFSET_SEGMENT", "DPG_SEGMENT_WIDTH", "kDpgSegWidth", "opp2_set_disp_pattern_generator"),
+    ("DPG_COLOUR_B_CB", "DPG_COLOUR1_B_CB", "kDpgColB1", "opp2_dpg_set_blank_color"),
+    ("DPG_COLOUR_B_CB", "DPG_COLOUR0_B_CB", "kDpgColB0", "opp2_dpg_set_blank_color"),
+    ("DPG_COLOUR_G_Y", "DPG_COLOUR1_G_Y", "kDpgColG1", "opp2_dpg_set_blank_color"),
+    ("DPG_COLOUR_G_Y", "DPG_COLOUR0_G_Y", "kDpgColG0", "opp2_dpg_set_blank_color"),
+    ("DPG_COLOUR_R_CR", "DPG_COLOUR1_R_CR", "kDpgColR1", "opp2_dpg_set_blank_color"),
+    ("DPG_COLOUR_R_CR", "DPG_COLOUR0_R_CR", "kDpgColR0", "opp2_dpg_set_blank_color"),
+    ("DPG_RAMP_CONTROL", "DPG_RAMP0_OFFSET", "kDpgRamp0", "opp2_set_disp_pattern_generator (video mode clears it)"),
 ]
 
 # Named fields of registers without an instance block (full Linux names), for Test L step 3 (phx_dcn314_clk.h):
@@ -216,9 +232,11 @@ def main():
     sh = defines(read("include/asic_reg/dcn/dcn_3_1_4_sh_mask.h"))
     mac = macros([read(p) for p in ("display/dc/hubp/dcn10/dcn10_hubp.h", "display/dc/hubp/dcn20/dcn20_hubp.h",
                                      "display/dc/hubp/dcn21/dcn21_hubp.h", "display/dc/hubp/dcn30/dcn30_hubp.h",
-                                     "display/dc/optc/dcn314/dcn314_optc.h")])
+                                     "display/dc/optc/dcn314/dcn314_optc.h", "display/dc/opp/dcn10/dcn10_opp.h",
+                                     "display/dc/opp/dcn20/dcn20_opp.h", "display/dc/dcn30/dcn30_opp.h")])
     block = expand("HUBP_REG_LIST_DCN30", mac)
     block.update(expand("OPTC_COMMON_REG_LIST_DCN3_14", mac))
+    block.update(expand("OPP_REG_LIST_DCN30", mac))   # dcn314_resource.c opp_regs
 
     lines = []
     regs_out = []

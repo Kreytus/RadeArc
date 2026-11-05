@@ -7,7 +7,8 @@ OUT=build/linux-src
 R=https://raw.githubusercontent.com/torvalds/linux/v6.17/drivers/gpu/drm/amd
 for f in include/asic_reg/dcn/dcn_3_1_4_offset.h include/asic_reg/dcn/dcn_3_1_4_sh_mask.h \
          display/dc/hubp/dcn10/dcn10_hubp.h display/dc/hubp/dcn20/dcn20_hubp.h display/dc/hubp/dcn21/dcn21_hubp.h \
-         display/dc/hubp/dcn30/dcn30_hubp.h display/dc/optc/dcn314/dcn314_optc.h; do
+         display/dc/hubp/dcn30/dcn30_hubp.h display/dc/optc/dcn314/dcn314_optc.h \
+         display/dc/opp/dcn10/dcn10_opp.h display/dc/opp/dcn20/dcn20_opp.h display/dc/dcn30/dcn30_opp.h; do
     mkdir -p "$OUT/$(dirname "$f")"
     [ -s "$OUT/$f" ] || curl -sfSL --retry 3 -o "$OUT/$f" "$R/$f"
 done

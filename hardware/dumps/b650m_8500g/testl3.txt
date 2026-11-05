@@ -1,0 +1,23 @@
+== 2026-11-05 19:07:27 testl3 --apply (RadeArc package a526db97c0754b819b18cc4efa66c52d680e8ce4)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== preconditions: DLG refclk 24000 kHz, HUBP0 blank 0, VTG0_VCOUNT_INIT 1121, OTG0 frames +6 in 100 ms, SMU response 0x1
+== clocks now: DENTIST VCO 2400000 kHz, DISPCLK 165517 kHz (RDIVIDER), DPPCLK0 DTO param 0x00000000 ctrl 0x00000000 (enable 0)
+== up (dcn314_update_clocks, Linux DML 144 Hz):
+  SetDispclkFreq 343 MHz (DISPCLK >= 342857 kHz)
+  SetDppclkFreq 338 MHz (DPPCLK >= 337478 kHz)
+  DPPCLK0_DTO_PARAM phase 255 modulo 255, DPPCLK0_DTO_ENABLE 1
+== down: SetDispclkFreq 166 MHz (GOP's DISPCLK), DTO registers as saved, SetDppclkFreq 150 MHz (Linux 60 Hz)
+== up: SetDispclkFreq OK (400 MHz), SetDppclkFreq OK (400 MHz); DISPCLK now 355555 kHz
+   2.0 s: frames +120, underflow status 0, DISPCLK 355555 kHz
+   4.0 s: frames +241, underflow status 0, DISPCLK 355555 kHz
+   6.0 s: frames +361, underflow status 0, DISPCLK 355555 kHz
+   8.0 s: frames +481, underflow status 0, DISPCLK 355555 kHz
+  10.0 s: frames +602, underflow status 0, DISPCLK 355555 kHz
+  12.0 s: frames +722, underflow status 0, DISPCLK 355555 kHz
+  14.0 s: frames +843, underflow status 0, DISPCLK 355555 kHz
+  watched: 903 frames, underflow status max 0, DISPCLK 355555..355555 kHz
+== down: SetDispclkFreq OK (200 MHz), SetDppclkFreq OK (150 MHz), DTO as saved; DISPCLK now 168421 kHz (was 165517)
+RESULT: PASS (144 Hz clocks held 15 s at 60 Hz without underflow, and came back down)
+testl3 exit 0

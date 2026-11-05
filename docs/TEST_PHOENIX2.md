@@ -440,3 +440,15 @@ Expected in `~/Desktop/testl3.txt`:
 - `RESULT: PASS`
 
 The picture doesn't change; the panel stays at 60 Hz.
+
+**Test L step 3, passed** (package a526db9, build 46, `hardware/dumps/b650m_8500g/testl3.txt`):
+- Up: `SetDispclkFreq 343` and `SetDppclkFreq 338` both answered OK. The DENTIST divider then gave
+  **DISPCLK 355.555 MHz** (2400 / 6.75), the first divider step at or above DML's 342.857 MHz.
+- For 15 s: 903 frames (60.2 Hz), underflow 0, DISPCLK steady.
+- Down: both messages OK, the DTO registers back as saved. DISPCLK 168.421 MHz (2400 / 14.25), one divider step
+  above GOP's 165.517 for the 166 MHz request.
+- The argument register after each message read 400 / 400 going up and 200 / 150 coming down, not the DENTIST
+  clock. `dcn314_smu_set_dispclk` returns that value as "actual_dispclk_set_mhz", so it is the SMU's own figure (which
+  DPM level it picked, perhaps), and the DENTIST divider is the clock to trust.
+- So the SMU path Linux uses for DCN 3.1.4 clocks works on the 8500G, and the pipe takes the 144 Hz clocks without
+  underflow.

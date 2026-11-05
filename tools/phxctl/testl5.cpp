@@ -104,7 +104,9 @@ struct Snap { const char *name; uint32_t addr, mask; };
 static const Snap kSnap[] = {
     {"DIG0_DIG_BE_CNTL", kDigBeMode.addr, 0xFFFFFFFFu},
     {"DIG0_DIG_BE_EN_CNTL", kDigBeEnable.addr, 0x00000001u},
-    {"DIG0_DIG_FE_CNTL", kDigFeSourceSel.addr, ~(kDigFeSymclkOn.mask | kDigFeDolbyMissed.mask)},
+    // DIG_STEREOSYNC_GATE_EN: enc1_setup_stereo_sync sets it to 1 for a stream without 3D, GOP leaves 0 (Test L 5b): it is
+    // checked separately against Linux's value below
+    {"DIG0_DIG_FE_CNTL", kDigFeSourceSel.addr, ~(kDigFeSymclkOn.mask | kDigFeDolbyMissed.mask | kDigFeStereoGate.mask)},
     {"DIG0_DIG_FIFO_CTRL0", kDigFifoEnable.addr, ~(kDigFifoResetDone.mask | kDigFifoError.mask)},
     {"OTG0_OTG_CONTROL", kOtgOutMux.addr, kOtgOutMux.mask},
     {"OTG_PIXEL_RATE_DIV", kOtg0RateDivK1.addr, kOtg0RateDivK1.mask | kOtg0RateDivK2.mask},
@@ -160,6 +162,9 @@ static int runDpms(Io io) {
         diff += !same;
         printf("  %-34s [0x%05x] before 0x%08x after 0x%08x %s\n", kSnap[i].name, kSnap[i].addr, before[i], now, same ? "same" : "DIFFERS");
     }
+    const unsigned gate = fieldGet(rd(nullptr, kDigFeStereoGate.addr), kDigFeStereoGate);
+    printf("  DIG_STEREOSYNC_GATE_EN %u (Linux's enc1_setup_stereo_sync, no 3D: 1)\n", gate);
+    diff += gate != 1;
     const unsigned fifoErr = fieldGet(rd(nullptr, kDigFifoError.addr), kDigFifoError);
     printf("  2 s on: frames +%u, underflow %u (was %u), DIG_FIFO_ERROR %u (was %u)\n", (b1 - b0) & 0xFFFFFF, uf, uf0, fifoErr,
            fieldGet(before[3], kDigFifoError));

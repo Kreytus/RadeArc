@@ -577,3 +577,12 @@ If the picture doesn't come back, restart: GOP lights the link at every boot.
   3 s off and `DIG_FIFO_ERROR` 0 after on.
 - `DIG_FE_CNTL` bit 8 (`DIG_STEREOSYNC_GATE_EN`) ends at 1, the value `enc1_setup_stereo_sync` gives with no 3D. GOP
   had 0; it only matters for stereo 3D. The compare masks nothing else.
+
+**Test L step 5b, passed on the second run** (package da4a937, `hardware/dumps/b650m_8500g/testl5b.txt`):
+- With the SYMCLK-on-TX-off workaround OTG0 kept running through the 3 s off: 180 frames.
+- Both DMUB sequences went through: transmitter disable + SET_PIXEL_CLOCK, then STREAM_SETUP + transmitter enable.
+- After on: 120 frames in 2 s, underflow 0, `DIG_FIFO_ERROR` 0, and the picture came back.
+- Every compared register equals GOP's except `DIG_STEREOSYNC_GATE_EN` (1, Linux's no-3D value; GOP 0).
+  `testl5` counted that as a failure and printed CHECK; it now checks that bit against Linux's value instead.
+- So Linux's link down / up path, the DMUB transmitter and encoder commands, and the encoder FIFO handshake all work
+  on the 8500G, with the TMDS SYMCLK workaround. That workaround becomes part of every TMDS link-off in the mode set.

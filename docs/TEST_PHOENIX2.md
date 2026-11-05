@@ -527,3 +527,36 @@ Expected in `~/Desktop/testl5.txt`:
 - Unblank: video mode (`DPG_CONTROL` 0, as Linux writes it). The tool then put GOP's 0x30 back; with `DPG_EN` 0 the
   mode bits do nothing.
 - So the blank Linux uses around its HDMI mode set works on the 8500G.
+
+## Test L, step 5b: Linux's DPMS off and on for the DVI link
+
+After `bash testj.sh run` in the same boot (the driver's DMCUB):
+```bash
+cd ~/Desktop/radearc-package && bash testl5.sh --dpms
+```
+
+Linux's own monitor-sleep path (`link_set_dpms_off` / `link_set_dpms_on`, `phx_dcn314_dpms.h`), for GOP's DVI stream
+on DIG FE 0 / BE 0 / PHY A. The OTG keeps running.
+- **Off:** FIFO off, BE disconnected from FE 0, then the DMUB transmitter disable.
+- **On:**
+  - DIG_MODE 2, OTG out mux DIO, stereo sync
+  - the DMUB encoder STREAM_SETUP (DVI, 148.5 MHz)
+  - FE connected, FIFO reset and enabled
+  - the DMUB transmitter enable (DVI, 148.5 MHz, 4 lanes)
+  - DIG_MODE again, the pixel rate divider, the encoder again, metadata off
+
+**The monitor loses the signal for about 3 s, then shows the picture again.**
+
+It refuses unless DMCUB runs the driver's firmware, DIG BE 0 is in DVI mode and enabled with FE 0 connected, FE 0
+takes OTG0 and VPG0's memory is powered.
+
+Expected in `~/Desktop/testl5.txt`:
+- `DPMS off …: DMUB OK, DIG_ENABLE now 0`
+- the frame count during the 3 s off: the OTG either keeps running or stops while the PHY's clock is off, which this
+  test finds out
+- `DPMS on …: DMUB OK, DIG_ENABLE 1, FIFO reset timeouts 0`
+- every compared register `same`
+- about 120 frames in 2 s, underflow 0
+- `RESULT: PASS`
+
+If the picture doesn't come back, restart: GOP lights the link at every boot.

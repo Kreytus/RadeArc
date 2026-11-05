@@ -1,7 +1,9 @@
 #!/bin/bash
 # testl5.sh: Phase 3b Test L step 5 (docs/TEST_PHOENIX2.md). Runs from the unpacked install package.
 #   bash testl5.sh           read-only: which OPP feeds OTG0, the DPG state
-#   bash testl5.sh --blank   (--blank) 5a: blank the picture for 3 s the Linux way, unblank
+#   bash testl5.sh --blank   5a: blank the picture for 3 s the Linux way, unblank
+#   bash testl5.sh --dpms    5b: Linux's DPMS off / on for the DVI link (the monitor loses the signal for 3 s);
+#                            needs the driver's DMCUB: `bash testj.sh run` first in the same boot
 # Needs boot-args -phxp2 phxdebug=1. Output: ~/Desktop/testl5.txt
 D=$(cd "$(dirname "$0")" && pwd)
 P=$D/gpu/phxctl

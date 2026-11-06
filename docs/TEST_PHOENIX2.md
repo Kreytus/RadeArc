@@ -696,3 +696,6 @@ one-byte SCDC read returned 0x03, whatever the offset, while one 16-byte read at
 `sink version 3` and `TMDS_CONFIG after 3` were that same 0x03, not the monitor's state. The black screen in 5d needs
 another explanation. The next `--scdc` reads the SCDC in blocks, 0x01 at lengths 1 / 2 / 4 / 8, and one-byte EDID
 reads at 0x50 for comparison.
+The run after it (`testl5scdc-4.txt`, still the old `--scdc`) read **0xe0** one byte at a time at every offset. That's
+the first byte the previous run's 16-byte read left in the engine's buffer. So a one-byte read returns the byte left
+over from the previous read, and the monitor's answer never lands.

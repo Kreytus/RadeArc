@@ -689,3 +689,10 @@ If the picture doesn't come back, restart.
 - Differences from the 5d run, where SCDC reads worked: GOP's DMCUB firmware instead of the driver's, and the monitor's
   SCDC already set by 5d (TMDS_CONFIG 3). Whether the transaction caused it is open.
 - testl5 --scdc now stops with `STOPPED: ... after the read of 0xNN` as soon as the display registers read all ones.
+
+**`testl5 --scdc` after `testj.sh run`** (`testl5scdc-3.txt`): the display registers stayed alive this time. Every
+one-byte SCDC read returned 0x03, whatever the offset, while one 16-byte read at 0xd0 returned different bytes
+(`e0 00 00 00 00 00 00 00 00 00 10 04 00 00 00 09`). So the one-byte reads aren't carrying the monitor's data, and 5d's
+`sink version 3` and `TMDS_CONFIG after 3` were that same 0x03, not the monitor's state. The black screen in 5d needs
+another explanation. The next `--scdc` reads the SCDC in blocks, 0x01 at lengths 1 / 2 / 4 / 8, and one-byte EDID
+reads at 0x50 for comparison.

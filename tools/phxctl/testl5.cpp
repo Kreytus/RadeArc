@@ -234,11 +234,33 @@ static int runScdc(bool write0) {
             return 4;
         }
     }
-    uint8_t blk[16] = {};   // the same bytes in one read, as a check that the single reads are not one stale byte
-    const uint32_t e = ddc.readAt(0x54, 0xd0, blk, 16);
-    printf("  0xd0..0xdf in one read: ");
-    if (e == phxi2c::kOk) { for (uint8_t b : blk) printf("%02x ", b); printf("\n"); }
-    else printf("failed: %s\n", phxi2c::resultName(e));
+    // The 2026-11-06 run read 0x03 at every offset one byte at a time, but different bytes in one 16-byte read: the
+    // same offsets in blocks, and offset 0x01 read 1, 2, 4 and 8 bytes long, show which reads carry the monitor's data.
+    // A byte left in the engine's buffer (index 3) by the read before is what a read that never got data returns.
+    auto block = [&](uint8_t off, unsigned n) {
+        uint8_t blk[32] = {};
+        const uint32_t e = ddc.readAt(0x54, off, blk, n);
+        printf("  0x%02x..0x%02x in one read: ", off, off + n - 1);
+        if (e == phxi2c::kOk) { for (unsigned i = 0; i < n; i++) printf("%02x ", blk[i]); printf("\n"); }
+        else printf("failed: %s\n", phxi2c::resultName(e));
+        return !dcnDead();
+    };
+    if (!block(0x00, 32) || !block(0x20, 16) || !block(0x40, 32) || !block(0xd0, 16)) {
+        printf("STOPPED: the display registers read 0xffffffff after a block read (restart)\n");
+        return 4;
+    }
+    static const unsigned kLens[] = {1, 2, 4, 8};
+    for (unsigned n : kLens)
+        if (!block(0x01, n)) { printf("STOPPED: the display registers read 0xffffffff (restart)\n"); return 4; }
+    // the same one-byte read from the EDID at 0x50 (bytes 0 and 1 are 00 ff in any EDID; 8 is the maker ID's first byte)
+    static const uint8_t kEdidOffs[] = {0, 1, 8};
+    for (uint8_t off : kEdidOffs) {
+        uint8_t v = 0;
+        const uint32_t e = ddc.readAt(0x50, off, &v, 1);
+        printf("  EDID 0x%02x one byte: %s 0x%02x\n", off, phxi2c::resultName(e), v);
+        if (dcnDead()) { printf("STOPPED: the display registers read 0xffffffff (restart)\n"); return 4; }
+    }
+    block(0xd0, 1);   // one byte at 0xd0 again, against the block read's first byte
     if (!write0) { printf("Read-only: nothing written.\n"); return 0; }
     if (digMode != kDigModeDvi) {
         fprintf(stderr, "testl5: --scdc-write0 only while the link is DVI (GOP's signal; restart first): nothing written\n");
@@ -246,10 +268,11 @@ static int runScdc(bool write0) {
     }
     const uint8_t b[2] = {0x20, 0};
     const uint32_t w = ddc.write(0x54, b, 2);
-    uint8_t v = 0xff;
+    uint8_t v2[2] = {0xff, 0xff};
     usleep(1000);
-    const uint32_t r = ddc.readAt(0x54, 0x20, &v, 1);
-    printf("== TMDS_CONFIG <- 0: write %s; read back %s 0x%02x\n", phxi2c::resultName(w), phxi2c::resultName(r), v);
+    const uint32_t r = ddc.readAt(0x54, 0x20, v2, 2);   // two bytes: the one-byte reads came back stale (see above)
+    const uint8_t v = v2[0];
+    printf("== TMDS_CONFIG <- 0: write %s; read back (2 bytes) %s 0x%02x 0x%02x\n", phxi2c::resultName(w), phxi2c::resultName(r), v2[0], v2[1]);
     printf("RESULT: %s\n", w == phxi2c::kOk && r == phxi2c::kOk && v == 0 ? "the write took (TMDS_CONFIG 0)"
                                                                        : "CHECK: the monitor kept another value");
     return 0;

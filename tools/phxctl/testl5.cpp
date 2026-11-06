@@ -14,6 +14,9 @@
  *                     link down, OTG down, OTG up with the 60 Hz timing, link up, front end with Linux's 60 Hz values,
  *                     unblank. The pipe stays on Linux's values (step 2 proved them). Needs `testj.sh run` too.
  *
+ *   testl5 --scdc     the monitor's SCDC registers over DDC1, read-only; --scdc-write0 also writes TMDS_CONFIG 0 (only
+ *                     while the link is DVI at 148.5 MHz, where 0 is what the monitor receives) and reads it back
+ *
  * --blank: the screen goes black for 3 s. --dpms: the monitor loses the signal for 3 s and syncs again.
  * --modeset: the monitor loses the signal for a moment, as at any mode change.
  * PhxBringup debug selectors (-phxp2, phxdebug=1, root).
@@ -204,6 +207,46 @@ static bool scdcWrite(void *, const uint8_t *d, unsigned n) {
     return gScdcLastErr == phxi2c::kOk;
 }
 
+// --scdc: what the monitor's SCDC holds (offsets from include/drm/display/drm_scdc.h). Read-only, except with
+// --scdc-write0: TMDS_CONFIG = 0 (what write_scdc_data writes for a stream below 340 MHz) and read back, allowed only
+// while DIG BE 0 sends DVI at 148.5 MHz, which is unscrambled TMDS at the 1/10 clock ratio that 0 means.
+static int runScdc(bool write0) {
+    struct Reg { uint8_t off; const char *name; };
+    static const Reg kRegs[] = {{0x01, "SINK_VERSION"}, {0x02, "SOURCE_VERSION"}, {0x10, "UPDATE_0"}, {0x11, "UPDATE_1"},
+                                {0x20, "TMDS_CONFIG"}, {0x21, "SCRAMBLER_STATUS"}, {0x30, "CONFIG_0"}, {0x31, "CONFIG_1"},
+                                {0x40, "STATUS_FLAGS_0"}, {0x41, "STATUS_FLAGS_1"}, {0x50, "ERR_DET_0_L"}, {0x51, "ERR_DET_0_H"},
+                                {0xd0, "IEEE_OUI 0"}, {0xd1, "IEEE_OUI 1"}, {0xd2, "IEEE_OUI 2"}, {0xd3, "DEVICE_ID 0"},
+                                {0xdb, "HW_REVISION"}, {0xdc, "SW_REVISION_MAJOR"}};
+    const unsigned digMode = fieldGet(rd(nullptr, kDigBeMode.addr), kDigBeMode);
+    phxi2c::Ddc1<UHw> ddc(gHw);
+    printf("== SCDC at 0x54 over DDC1 (DDC1 %s; DIG BE0 mode %u: 2 DVI, 3 HDMI)\n", phxi2c::resultName(ddc.check()), digMode);
+    for (const Reg &g : kRegs) {
+        uint8_t v = 0;
+        const uint32_t e = ddc.readAt(0x54, g.off, &v, 1);
+        if (e == phxi2c::kOk) printf("  0x%02x %-18s 0x%02x\n", g.off, g.name, v);
+        else printf("  0x%02x %-18s read failed: %s\n", g.off, g.name, phxi2c::resultName(e));
+    }
+    uint8_t blk[16] = {};   // the same bytes in one read, as a check that the single reads are not one stale byte
+    const uint32_t e = ddc.readAt(0x54, 0xd0, blk, 16);
+    printf("  0xd0..0xdf in one read: ");
+    if (e == phxi2c::kOk) { for (uint8_t b : blk) printf("%02x ", b); printf("\n"); }
+    else printf("failed: %s\n", phxi2c::resultName(e));
+    if (!write0) { printf("Read-only: nothing written.\n"); return 0; }
+    if (digMode != kDigModeDvi) {
+        fprintf(stderr, "testl5: --scdc-write0 only while the link is DVI (GOP's signal; restart first): nothing written\n");
+        return 3;
+    }
+    const uint8_t b[2] = {0x20, 0};
+    const uint32_t w = ddc.write(0x54, b, 2);
+    uint8_t v = 0xff;
+    usleep(1000);
+    const uint32_t r = ddc.readAt(0x54, 0x20, &v, 1);
+    printf("== TMDS_CONFIG <- 0: write %s; read back %s 0x%02x\n", phxi2c::resultName(w), phxi2c::resultName(r), v);
+    printf("RESULT: %s\n", w == phxi2c::kOk && r == phxi2c::kOk && v == 0 ? "the write took (TMDS_CONFIG 0)"
+                                                                       : "CHECK: the monitor kept another value");
+    return 0;
+}
+
 // target: 0 keep the signal GOP / the last run left, 2 DVI, 3 HDMI
 static int runModeset(Io io, unsigned target) {
     phxdmubinbox::Io dio{rd, wr, vrd, vwr, delayUs, nullptr};
@@ -285,11 +328,13 @@ int main(int argc, char **argv) {
     const bool doDpms = argc > 1 && !strcmp(argv[1], "--dpms");
     const bool doModeset = argc > 1 && !strcmp(argv[1], "--modeset");
     const bool doHdmi = argc > 1 && !strcmp(argv[1], "--hdmi"), doDvi = argc > 1 && !strcmp(argv[1], "--dvi");
-    if (argc > 1 && !doBlank && !doDpms && !doModeset && !doHdmi && !doDvi) {
-        fprintf(stderr, "usage: testl5 [--blank | --dpms | --modeset | --hdmi | --dvi]\n");
+    const bool doScdc = argc > 1 && !strcmp(argv[1], "--scdc"), doScdcW = argc > 1 && !strcmp(argv[1], "--scdc-write0");
+    if (argc > 1 && !doBlank && !doDpms && !doModeset && !doHdmi && !doDvi && !doScdc && !doScdcW) {
+        fprintf(stderr, "usage: testl5 [--blank | --dpms | --modeset | --hdmi | --dvi | --scdc | --scdc-write0]\n");
         return 2;
     }
     if (open_kext()) return 1;
+    if (doScdc || doScdcW) return runScdc(doScdcW);
     if (doDpms) return runDpms(Io{rd, wr, delayUs, nullptr});
     if (doModeset || doHdmi || doDvi) return runModeset(Io{rd, wr, delayUs, nullptr}, doHdmi ? kDigModeHdmi : doDvi ? kDigModeDvi : 0);
     Io io{rd, wr, delayUs, nullptr};

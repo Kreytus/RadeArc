@@ -671,3 +671,12 @@ To go back to DVI (GOP's signal): `bash testl5.sh --dvi`. A restart does the sam
 HDMI → HDMI mode set (SCDC set to legacy on the way down, as Linux does).
 
 If the picture doesn't come back, restart.
+
+**Test L step 5d, first run: black screen** (package b3806df, `hardware/dumps/b650m_8500g/testl5d-1.txt`):
+- The pipe side worked: DIG_MODE 3 (HDMI), the AVI InfoFrame sending on line 2, 180 frames, `DIG_FIFO_ERROR` 0, the DIG
+  enabled. A HUBP underflow appeared (1, was 0), which 5c didn't have.
+- The monitor showed nothing. Its SCDC answered with `SINK_VERSION` 3. Linux writes `SOURCE_VERSION` only for version 1,
+  so it was skipped, as Linux would. Then `TMDS_CONFIG` read **3** after we wrote 0. 3 means scrambling on and the 1/40
+  clock ratio, which a 148.5 MHz unscrambled stream can't match: the likely cause of the black screen.
+- Next: `bash testl5.sh --scdc` (read-only) after a restart, on GOP's DVI signal, shows what the monitor holds there.
+  `bash testl5.sh --scdc-write0` then shows whether a write of 0 takes.

@@ -1,0 +1,10 @@
+== 2026-11-05 20:34:27 testl5 --hdmi (RadeArc package b3806df0554c4f15034f5e6b995460c54f40149b)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== 5c/5d preconditions: DMCUB driver firmware, inbox 1 OK; OTG0 timing = EDID mode 0 (60 Hz); DLG refclk 24000 kHz; DIG BE0 mode 2 (2 DVI, 3 HDMI) enable 1; VPG0 0; DDC1 ok; going to HDMI
+== HDMI up: SCDC read ok, sink version 3, writes ok, TMDS_CONFIG after 3 (last I2C result ok); VPG idle; DIG_MODE 3; AVI InfoFrame 82 02 0d, sending 1 on line 2
+== mode set (60 Hz DVI -> HDMI, Linux's order): DMUB OK; OTG_BUSY cleared yes, OPTC clock on yes, OTG clock on yes (an OTG underflow was cleared); timing ok; front end ok; FIFO reset timeouts 0
+  3 s after: frames +180, OTG_MASTER_EN 1, VTG0_ENABLE 1, timing the 60 Hz mode, underflow 1 (was 0), DIG_FIFO_ERROR 0, DIG_ENABLE 1
+RESULT: CHECK (see above; if the picture did not come back, restart)
+testl5 exit 0

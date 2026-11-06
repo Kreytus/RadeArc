@@ -680,3 +680,12 @@ If the picture doesn't come back, restart.
   clock ratio, which a 148.5 MHz unscrambled stream can't match: the likely cause of the black screen.
 - Next: `bash testl5.sh --scdc` (read-only) after a restart, on GOP's DVI signal, shows what the monitor holds there.
   `bash testl5.sh --scdc-write0` then shows whether a write of 0 takes.
+
+**`testl5 --scdc` without `testj.sh run` first: the display registers stopped answering** (package caca919,
+`testl5scdc-1.txt`, `testl5scdc-2.txt`, `dcn-dead-regs.txt`, `dcn-dead-gc.txt`):
+- The DDC1 check and the I2C engine setup read real values. The status read after the first transaction to 0x54 read
+  all ones (reported as "no ACK"). From then on every DCN register read 0xffffffff, the OTG frame counter included.
+- GC (GRBM, CP, RLC, SDMA) and SMUIO's GOLDEN_TSC still answered: only the display block was gone.
+- Differences from the 5d run, where SCDC reads worked: GOP's DMCUB firmware instead of the driver's, and the monitor's
+  SCDC already set by 5d (TMDS_CONFIG 3). Whether the transaction caused it is open.
+- testl5 --scdc now stops with `STOPPED: ... after the read of 0xNN` as soon as the display registers read all ones.

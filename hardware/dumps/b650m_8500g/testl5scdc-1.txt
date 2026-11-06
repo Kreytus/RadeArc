@@ -1,0 +1,26 @@
+== 2026-11-06 17:47:00 testl5 --scdc (RadeArc package caca919cf825a5872592b54ce3390a618acae4bf)
+  |   "phx-chip" = "Phoenix 2"
+  |   "phx-build" = 46
+-v keepsyms=1 debug=0x100 npci=0x3000 phxdebug=1 -phxp2 amfi=0x80 amfi_get_out_of_my_way=0x1 -amfipassbeta -phxfbext -phxfbedid 
+== SCDC at 0x54 over DDC1 (DDC1 ok; DIG BE0 mode 2: 2 DVI, 3 HDMI)
+  0x01 SINK_VERSION       read failed: no ACK at 0x50 (no monitor?)
+  0x02 SOURCE_VERSION     read failed: DDC1 pad not in hardware I2C mode
+  0x10 UPDATE_0           read failed: DDC1 pad not in hardware I2C mode
+  0x11 UPDATE_1           read failed: DDC1 pad not in hardware I2C mode
+  0x20 TMDS_CONFIG        read failed: DDC1 pad not in hardware I2C mode
+  0x21 SCRAMBLER_STATUS   read failed: DDC1 pad not in hardware I2C mode
+  0x30 CONFIG_0           read failed: DDC1 pad not in hardware I2C mode
+  0x31 CONFIG_1           read failed: DDC1 pad not in hardware I2C mode
+  0x40 STATUS_FLAGS_0     read failed: DDC1 pad not in hardware I2C mode
+  0x41 STATUS_FLAGS_1     read failed: DDC1 pad not in hardware I2C mode
+  0x50 ERR_DET_0_L        read failed: DDC1 pad not in hardware I2C mode
+  0x51 ERR_DET_0_H        read failed: DDC1 pad not in hardware I2C mode
+  0xd0 IEEE_OUI 0         read failed: DDC1 pad not in hardware I2C mode
+  0xd1 IEEE_OUI 1         read failed: DDC1 pad not in hardware I2C mode
+  0xd2 IEEE_OUI 2         read failed: DDC1 pad not in hardware I2C mode
+  0xd3 DEVICE_ID 0        read failed: DDC1 pad not in hardware I2C mode
+  0xdb HW_REVISION        read failed: DDC1 pad not in hardware I2C mode
+  0xdc SW_REVISION_MAJOR  read failed: DDC1 pad not in hardware I2C mode
+  0xd0..0xdf in one read: failed: DDC1 pad not in hardware I2C mode
+Read-only: nothing written.
+testl5 exit 0

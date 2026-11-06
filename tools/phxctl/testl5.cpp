@@ -217,6 +217,10 @@ static int runScdc(bool write0) {
                                 {0x40, "STATUS_FLAGS_0"}, {0x41, "STATUS_FLAGS_1"}, {0x50, "ERR_DET_0_L"}, {0x51, "ERR_DET_0_H"},
                                 {0xd0, "IEEE_OUI 0"}, {0xd1, "IEEE_OUI 1"}, {0xd2, "IEEE_OUI 2"}, {0xd3, "DEVICE_ID 0"},
                                 {0xdb, "HW_REVISION"}, {0xdc, "SW_REVISION_MAJOR"}};
+    // DCN registers reading all ones (seen 2026-11-06 right after the first SCDC transaction, GC still answering): stop
+    // at once and say after which read
+    auto dcnDead = [] { return rd(nullptr, kOtgFrameCount.addr) == 0xFFFFFFFFu && rd(nullptr, kDigBeMode.addr) == 0xFFFFFFFFu; };
+    if (dcnDead()) { fprintf(stderr, "testl5: the display registers read 0xffffffff (restart): nothing done\n"); return 3; }
     const unsigned digMode = fieldGet(rd(nullptr, kDigBeMode.addr), kDigBeMode);
     phxi2c::Ddc1<UHw> ddc(gHw);
     printf("== SCDC at 0x54 over DDC1 (DDC1 %s; DIG BE0 mode %u: 2 DVI, 3 HDMI)\n", phxi2c::resultName(ddc.check()), digMode);
@@ -225,6 +229,10 @@ static int runScdc(bool write0) {
         const uint32_t e = ddc.readAt(0x54, g.off, &v, 1);
         if (e == phxi2c::kOk) printf("  0x%02x %-18s 0x%02x\n", g.off, g.name, v);
         else printf("  0x%02x %-18s read failed: %s\n", g.off, g.name, phxi2c::resultName(e));
+        if (dcnDead()) {
+            printf("STOPPED: the display registers read 0xffffffff after the read of 0x%02x (restart)\n", g.off);
+            return 4;
+        }
     }
     uint8_t blk[16] = {};   // the same bytes in one read, as a check that the single reads are not one stale byte
     const uint32_t e = ddc.readAt(0x54, 0xd0, blk, 16);
